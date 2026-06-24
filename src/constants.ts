@@ -34,3 +34,5 @@ export function isValidModelId(value: string): boolean {
     !modelId.includes("://")
   );
 }
+
+export const OPENWIKI_VERSION = "0.1.0";

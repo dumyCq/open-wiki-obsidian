@@ -33,10 +33,9 @@ import {
   OPENROUTER_API_KEY_ENV_KEY,
   OPEN_WIKI_DIR,
   SUGGESTED_MODEL_IDS,
+  OPENWIKI_VERSION,
 } from "./constants.js";
 import type { OpenWikiCommand } from "./agent/types.js";
-
-const OPENWIKI_VERSION = "0.1.0";
 
 type RunState =
   | { status: "idle" }
