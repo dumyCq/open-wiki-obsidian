@@ -82,7 +82,7 @@ OpenWiki CLI reference:
 - \`openwiki --init [message]\` initializes OpenWiki documentation for the current repository.
 - \`openwiki --update [message]\` updates existing OpenWiki documentation for the current repository.
 - \`openwiki -p "message"\` or \`openwiki --print "message"\` runs once, prints the final assistant output, and exits.
-- \`openwiki --modelId <id>\` selects an OpenRouter model for that run.
+- \`openwiki --modelId <id>\` selects a model ID for that run.
 - \`openwiki --help\` prints current usage, options, and examples.
 
 If the user asks what the CLI can do, asks for commands/options/usage/examples, or asks for more details about OpenWiki itself, run \`openwiki --help\` with the available tools when possible and base your answer on the help output. If you cannot run the command, answer from the CLI reference above and say you could not verify live help output.

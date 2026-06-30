@@ -2,9 +2,15 @@ import { mkdir, readFile, writeFile, chmod } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  ANTHROPIC_API_KEY_ENV_KEY,
+  BASETEN_API_KEY_ENV_KEY,
+  FIREWORKS_API_KEY_ENV_KEY,
   isValidModelId,
+  normalizeProvider,
+  OPENAI_API_KEY_ENV_KEY,
   OPENROUTER_API_KEY_ENV_KEY,
   OPENWIKI_MODEL_ID_ENV_KEY,
+  OPENWIKI_PROVIDER_ENV_KEY,
 } from "./constants.js";
 
 export const openWikiEnvDir = path.join(os.homedir(), ".openwiki");
@@ -13,10 +19,7 @@ export const openWikiEnvPath = path.join(openWikiEnvDir, ".env");
 type EnvMap = Record<string, string>;
 
 export type CredentialDiagnostic = {
-  key:
-    | "LANGSMITH_API_KEY"
-    | typeof OPENROUTER_API_KEY_ENV_KEY
-    | typeof OPENWIKI_MODEL_ID_ENV_KEY;
+  key: string;
   source:
     | "process.env"
     | "~/.openwiki/.env"
@@ -28,7 +31,12 @@ export type CredentialDiagnostic = {
 };
 
 const managedEnvKeys = [
+  BASETEN_API_KEY_ENV_KEY,
+  FIREWORKS_API_KEY_ENV_KEY,
+  OPENAI_API_KEY_ENV_KEY,
+  ANTHROPIC_API_KEY_ENV_KEY,
   OPENROUTER_API_KEY_ENV_KEY,
+  OPENWIKI_PROVIDER_ENV_KEY,
   OPENWIKI_MODEL_ID_ENV_KEY,
   "LANGSMITH_API_KEY",
   "LANGCHAIN_PROJECT",
@@ -36,7 +44,6 @@ const managedEnvKeys = [
 ];
 
 const deprecatedEnvKeys = [
-  "OPENAI_API_KEY",
   "OPENAI_BASE_URL",
   "OPENAI_ORG_ID",
   "OPENAI_PROJECT",
@@ -64,6 +71,11 @@ export async function getCredentialDiagnostics(): Promise<
   const fileEnv = await readOpenWikiEnv();
 
   return [
+    createCredentialDiagnostic(OPENWIKI_PROVIDER_ENV_KEY, fileEnv),
+    createCredentialDiagnostic(BASETEN_API_KEY_ENV_KEY, fileEnv),
+    createCredentialDiagnostic(FIREWORKS_API_KEY_ENV_KEY, fileEnv),
+    createCredentialDiagnostic(OPENAI_API_KEY_ENV_KEY, fileEnv),
+    createCredentialDiagnostic(ANTHROPIC_API_KEY_ENV_KEY, fileEnv),
     createCredentialDiagnostic(OPENROUTER_API_KEY_ENV_KEY, fileEnv),
     createCredentialDiagnostic(OPENWIKI_MODEL_ID_ENV_KEY, fileEnv),
     createCredentialDiagnostic("LANGSMITH_API_KEY", fileEnv),
@@ -122,13 +134,15 @@ function createCredentialDiagnostic(
     source,
     length: value.length,
     preview:
-      key === OPENWIKI_MODEL_ID_ENV_KEY
+      key === OPENWIKI_MODEL_ID_ENV_KEY || key === OPENWIKI_PROVIDER_ENV_KEY
         ? JSON.stringify(value)
         : createCredentialPreview(value),
     warnings:
       key === OPENWIKI_MODEL_ID_ENV_KEY
         ? getModelWarnings(value)
-        : getCredentialWarnings(value),
+        : key === OPENWIKI_PROVIDER_ENV_KEY
+          ? getProviderWarnings(value)
+          : getCredentialWarnings(value),
   };
 }
 
@@ -183,6 +197,10 @@ function getCredentialWarnings(value: string): string[] {
 
 function getModelWarnings(value: string): string[] {
   return isValidModelId(value) ? [] : ["invalid model ID"];
+}
+
+function getProviderWarnings(value: string): string[] {
+  return normalizeProvider(value) === null ? ["invalid provider"] : [];
 }
 
 async function readOpenWikiEnv(): Promise<EnvMap> {

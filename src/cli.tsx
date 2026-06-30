@@ -26,14 +26,25 @@ import {
   type OpenWikiRunResult,
 } from "./agent/types.js";
 import {
-  DEFAULT_MODEL_ID,
+  ANTHROPIC_API_KEY_ENV_KEY,
+  BASETEN_API_KEY_ENV_KEY,
+  FIREWORKS_API_KEY_ENV_KEY,
+  getDefaultModelId,
+  getProviderApiKeyEnvKey,
+  getProviderLabel,
+  getProviderModelOptions,
   isValidModelId,
   normalizeModelId,
+  normalizeProvider,
+  OPENAI_API_KEY_ENV_KEY,
+  OPENWIKI_PROVIDER_ENV_KEY,
   OPENWIKI_MODEL_ID_ENV_KEY,
   OPENROUTER_API_KEY_ENV_KEY,
   OPEN_WIKI_DIR,
-  SUGGESTED_MODEL_IDS,
+  resolveConfiguredProvider,
+  SELECTABLE_OPENWIKI_PROVIDERS,
   OPENWIKI_VERSION,
+  type OpenWikiProvider,
 } from "./constants.js";
 import type { OpenWikiCommand } from "./agent/types.js";
 
@@ -107,7 +118,10 @@ const OPENWIKI_LOGO_WIDTH = Math.max(
 function App({ command }: AppProps) {
   const app = useApp();
   const startupModelId = command.kind === "run" ? command.modelId : null;
+  const startupProvider = resolveConfiguredProvider();
   const autoExitOnSuccess = shouldAutoExitStartupRun(command);
+  const [sessionProvider, setSessionProvider] =
+    useState<OpenWikiProvider>(startupProvider);
   const [sessionModelId, setSessionModelId] = useState<string | null>(
     startupModelId,
   );
@@ -185,6 +199,17 @@ function App({ command }: AppProps) {
     setSessionModelId(modelId);
   }
 
+  async function selectProvider(provider: OpenWikiProvider) {
+    const modelId = getDefaultModelId(provider);
+
+    await saveOpenWikiEnv({
+      [OPENWIKI_PROVIDER_ENV_KEY]: provider,
+      [OPENWIKI_MODEL_ID_ENV_KEY]: modelId,
+    });
+    setSessionProvider(provider);
+    setSessionModelId(modelId);
+  }
+
   useEffect(() => {
     mountedRef.current = true;
 
@@ -214,10 +239,12 @@ function App({ command }: AppProps) {
       return;
     }
 
-    if (!process.env[OPENROUTER_API_KEY_ENV_KEY] && !process.stdin.isTTY) {
+    const apiKeyEnvKey = getProviderApiKeyEnvKey(sessionProvider);
+
+    if (!process.env[apiKeyEnvKey] && !process.stdin.isTTY) {
       setRunState({
         status: "error",
-        message: `${OPENROUTER_API_KEY_ENV_KEY} is required. Run openwiki in an interactive terminal to save credentials.`,
+        message: `${apiKeyEnvKey} is required. Run openwiki in an interactive terminal to save credentials.`,
       });
       return;
     }
@@ -345,6 +372,7 @@ function App({ command }: AppProps) {
     resolvedCommand,
     runState.status,
     sessionModelId,
+    sessionProvider,
     shouldRunInteractiveCredentialSetup,
   ]);
 
@@ -394,6 +422,9 @@ function App({ command }: AppProps) {
           if (result.modelId) {
             setSessionModelId(result.modelId);
           }
+          if (result.provider) {
+            setSessionProvider(result.provider);
+          }
 
           setRunState({ status: "init-setup-saved", result });
         }}
@@ -411,10 +442,18 @@ function App({ command }: AppProps) {
           modelId={runState.result.modelId ?? displayModelId}
           subtitle="Credential setup"
         />
-        {runState.result.savedOpenRouterKey ||
+        {runState.result.savedApiKey ||
+        runState.result.savedProvider ||
         runState.result.savedModelId ||
         runState.result.savedLangSmithKey ? (
           <StatusLine tone="success" label="Credentials" value="saved" />
+        ) : null}
+        {runState.result.provider ? (
+          <StatusLine
+            tone="muted"
+            label="Provider"
+            value={getProviderLabel(runState.result.provider)}
+          />
         ) : null}
         {runState.result.modelId ? (
           <StatusLine
@@ -466,9 +505,11 @@ function App({ command }: AppProps) {
         <ChatHistory runs={completedRuns} />
         <ChatInput
           currentModelId={getDisplayModelId(displayModelId)}
+          currentProvider={sessionProvider}
           onClear={clearSession}
           onCommandRun={submitCommandRun}
           onModelSelect={selectModel}
+          onProviderSelect={selectProvider}
           onSubmit={submitChatMessage}
         />
       </Box>
@@ -508,9 +549,11 @@ function App({ command }: AppProps) {
       <Header modelId={displayModelId} subtitle="Ready for chat" />
       <ChatInput
         currentModelId={getDisplayModelId(displayModelId)}
+        currentProvider={sessionProvider}
         onClear={clearSession}
         onCommandRun={submitCommandRun}
         onModelSelect={selectModel}
+        onProviderSelect={selectProvider}
         onSubmit={submitChatMessage}
       />
     </Box>
@@ -585,7 +628,10 @@ function DryRunView({
         <StatusLine
           tone="muted"
           label="Model"
-          value={modelId ?? `saved setting or ${DEFAULT_MODEL_ID}`}
+          value={
+            modelId ??
+            `saved setting or ${getDefaultModelId(resolveConfiguredProvider())}`
+          }
         />
         <StatusLine tone="muted" label="Agent" value="not invoked" />
         <StatusLine tone="muted" label="Writes" value="no files or metadata" />
@@ -665,9 +711,12 @@ function Header({
 }) {
   const terminalColumns = process.stdout.columns ?? 80;
   const displayModelId = sanitizeHeaderValue(
-    modelId ?? process.env[OPENWIKI_MODEL_ID_ENV_KEY] ?? DEFAULT_MODEL_ID,
+    modelId ??
+      process.env[OPENWIKI_MODEL_ID_ENV_KEY] ??
+      getDefaultModelId(resolveConfiguredProvider()),
     Math.max(8, terminalColumns - 12),
   );
+  const displayProvider = getProviderLabel(resolveConfiguredProvider());
   const displayDirectory = sanitizeHeaderValue(
     formatCwd(process.cwd()),
     Math.max(8, terminalColumns - 17),
@@ -684,6 +733,8 @@ function Header({
           <Text color="cyan">{">_ "}</Text>
           <Text bold>OpenWiki</Text>{" "}
           <Text color="gray">v{OPENWIKI_VERSION}</Text>{" "}
+          <Text color="gray">provider: </Text>
+          <Text color="white">{displayProvider}</Text>{" "}
           <Text color="gray">model: </Text>
           <Text color="white">{displayModelId}</Text>
         </Text>
@@ -724,6 +775,10 @@ function Header({
           <Text bold>OpenWiki</Text>{" "}
           <Text color="gray">v{OPENWIKI_VERSION}</Text>{" "}
           <Text color="gray">agent docs for codebases</Text>
+        </Text>
+        <Text>
+          <Text color="gray">provider: </Text>
+          <Text color="white">{displayProvider}</Text>
         </Text>
         <Text>
           <Text color="gray">model: </Text>
@@ -1155,20 +1210,24 @@ function ChatHistory({ runs }: { runs: CompletedRun[] }) {
 
 type ChatInputProps = {
   currentModelId: string;
+  currentProvider: OpenWikiProvider;
   onClear: () => void;
   onCommandRun: (
     command: Extract<OpenWikiCommand, "init" | "update">,
     message: string | null,
   ) => void;
   onModelSelect: (modelId: string) => Promise<void>;
+  onProviderSelect: (provider: OpenWikiProvider) => Promise<void>;
   onSubmit: (message: string) => void;
 };
 
 function ChatInput({
   currentModelId,
+  currentProvider,
   onClear,
   onCommandRun,
   onModelSelect,
+  onProviderSelect,
   onSubmit,
 }: ChatInputProps) {
   const [inputState, setInputState] = useState<ChatInputState>({
@@ -1186,9 +1245,14 @@ function ChatInput({
 
   useEffect(() => {
     setMenuState((currentState) =>
-      syncMenuStateForInput(input, currentState, currentModelId),
+      syncMenuStateForInput(
+        input,
+        currentState,
+        currentModelId,
+        currentProvider,
+      ),
     );
-  }, [currentModelId, input]);
+  }, [currentModelId, currentProvider, input]);
 
   useInput((inputValue, key) => {
     if (isSaving) {
@@ -1196,12 +1260,16 @@ function ChatInput({
     }
 
     if (isMenuUpInput(inputValue, key) && menuState.kind !== "none") {
-      setMenuState((state) => moveMenuSelection(state, -1, currentModelId));
+      setMenuState((state) =>
+        moveMenuSelection(state, -1, currentModelId, currentProvider),
+      );
       return;
     }
 
     if (isMenuDownInput(inputValue, key) && menuState.kind !== "none") {
-      setMenuState((state) => moveMenuSelection(state, 1, currentModelId));
+      setMenuState((state) =>
+        moveMenuSelection(state, 1, currentModelId, currentProvider),
+      );
       return;
     }
 
@@ -1288,6 +1356,11 @@ function ChatInput({
       return;
     }
 
+    if (message === "/provider" && menuState.kind === "provider") {
+      await selectProviderMenuOption(menuState.selectedIndex);
+      return;
+    }
+
     const parsedCommand = parseSlashInput(message);
 
     if (parsedCommand === null) {
@@ -1321,7 +1394,26 @@ function ChatInput({
       setInputValue("/model");
       setMenuState({
         kind: "model",
-        selectedIndex: getCurrentModelOptionIndex(currentModelId),
+        selectedIndex: getCurrentModelOptionIndex(
+          currentModelId,
+          currentProvider,
+        ),
+      });
+      return;
+    }
+
+    if (option.id === "provider") {
+      if (args && args.length > 0) {
+        await saveProviderSelection(args);
+        return;
+      }
+
+      setError(null);
+      setNotice("Choose a provider, or type /provider <provider-id>.");
+      setInputValue("/provider");
+      setMenuState({
+        kind: "provider",
+        selectedIndex: getCurrentProviderOptionIndex(currentProvider),
       });
       return;
     }
@@ -1342,7 +1434,7 @@ function ChatInput({
     if (option.id === "help") {
       resetInput();
       setNotice(
-        "Slash commands: /model, /init, /update, /clear, /help, /exit. Use arrows to select.",
+        "Slash commands: /provider, /model, /init, /update, /clear, /help, /exit. Use arrows to select.",
       );
       return;
     }
@@ -1352,7 +1444,9 @@ function ChatInput({
   }
 
   async function selectModelMenuOption(selectedIndex: number) {
-    const option = getModelMenuOptions(currentModelId)[selectedIndex];
+    const option = getModelMenuOptions(currentModelId, currentProvider)[
+      selectedIndex
+    ];
 
     if (!option) {
       setError("Select a model.");
@@ -1361,7 +1455,7 @@ function ChatInput({
 
     if (option.kind === "custom") {
       setError(null);
-      setNotice("Type a custom OpenRouter model ID after /model.");
+      setNotice("Type a custom model ID after /model.");
       setInputValue("/model ");
       return;
     }
@@ -1373,7 +1467,7 @@ function ChatInput({
     const modelId = normalizeModelId(rawModelId);
 
     if (!isValidModelId(modelId)) {
-      setError("Enter a valid OpenRouter model ID.");
+      setError("Enter a valid model ID.");
       return;
     }
 
@@ -1390,6 +1484,50 @@ function ChatInput({
         saveError instanceof Error
           ? saveError.message
           : "Failed to save model selection.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function selectProviderMenuOption(selectedIndex: number) {
+    const provider = SELECTABLE_OPENWIKI_PROVIDERS[selectedIndex];
+
+    if (!provider) {
+      setError("Select a provider.");
+      return;
+    }
+
+    await saveProviderSelection(provider);
+  }
+
+  async function saveProviderSelection(rawProvider: string) {
+    const provider = normalizeProvider(rawProvider);
+
+    if (provider === null || provider === "openrouter") {
+      setError(
+        "Enter a valid provider: baseten, fireworks, openai, or anthropic.",
+      );
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await onProviderSelect(provider);
+      resetInput();
+      setNotice(
+        `Provider switched to ${getProviderLabel(provider)} with model ${getDefaultModelId(
+          provider,
+        )}. Ensure ${getProviderApiKeyEnvKey(provider)} is set.`,
+      );
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to save provider selection.",
       );
     } finally {
       setIsSaving(false);
@@ -1440,12 +1578,13 @@ function ChatInput({
       {menuState.kind !== "none" ? (
         <SlashMenu
           currentModelId={currentModelId}
+          currentProvider={currentProvider}
           input={input}
           menuState={menuState}
         />
       ) : null}
       {notice ? <Text color="green">{notice}</Text> : null}
-      {isSaving ? <Text color="gray">Saving model selection...</Text> : null}
+      {isSaving ? <Text color="gray">Saving selection...</Text> : null}
       {error ? <Text color="red">{error}</Text> : null}
     </Box>
   );
@@ -1459,9 +1598,17 @@ type ChatInputState = {
 type ChatInputMenuState =
   | { kind: "commands"; selectedIndex: number }
   | { kind: "model"; selectedIndex: number }
+  | { kind: "provider"; selectedIndex: number }
   | { kind: "none" };
 
-type SlashCommandId = "clear" | "exit" | "help" | "init" | "model" | "update";
+type SlashCommandId =
+  | "clear"
+  | "exit"
+  | "help"
+  | "init"
+  | "model"
+  | "provider"
+  | "update";
 
 type SlashCommandOption = {
   description: string;
@@ -1482,7 +1629,12 @@ type ModelMenuOption =
 
 const slashCommandOptions: SlashCommandOption[] = [
   {
-    description: "Switch the OpenRouter model",
+    description: "Switch the model provider",
+    id: "provider",
+    label: "/provider",
+  },
+  {
+    description: "Switch the current provider model",
     id: "model",
     label: "/model",
   },
@@ -1515,19 +1667,21 @@ const slashCommandOptions: SlashCommandOption[] = [
 
 function SlashMenu({
   currentModelId,
+  currentProvider,
   input,
   menuState,
 }: {
   currentModelId: string;
+  currentProvider: OpenWikiProvider;
   input: string;
   menuState: Exclude<ChatInputMenuState, { kind: "none" }>;
 }) {
   if (menuState.kind === "model") {
-    const modelOptions = getModelMenuOptions(currentModelId);
+    const modelOptions = getModelMenuOptions(currentModelId, currentProvider);
 
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color="gray">Models</Text>
+        <Text color="gray">Models for {getProviderLabel(currentProvider)}</Text>
         {modelOptions.map((option, index) => (
           <MenuRow
             description={
@@ -1547,6 +1701,27 @@ function SlashMenu({
         ) : (
           <Text color="gray">Use arrows, enter to select, esc to cancel.</Text>
         )}
+      </Box>
+    );
+  }
+
+  if (menuState.kind === "provider") {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color="gray">Providers</Text>
+        {SELECTABLE_OPENWIKI_PROVIDERS.map((provider, index) => (
+          <MenuRow
+            description={
+              provider === currentProvider
+                ? "current"
+                : `default model ${getDefaultModelId(provider)}`
+            }
+            isSelected={index === menuState.selectedIndex}
+            key={provider}
+            label={getProviderLabel(provider)}
+          />
+        ))}
+        <Text color="gray">Use arrows, enter to select, esc to cancel.</Text>
       </Box>
     );
   }
@@ -1707,18 +1882,34 @@ function syncMenuStateForInput(
   input: string,
   currentState: ChatInputMenuState,
   currentModelId: string,
+  currentProvider: OpenWikiProvider,
 ): ChatInputMenuState {
+  if (input.startsWith("/provider")) {
+    const selectedIndex =
+      currentState.kind === "provider"
+        ? currentState.selectedIndex
+        : getCurrentProviderOptionIndex(currentProvider);
+
+    return {
+      kind: "provider",
+      selectedIndex: clampMenuIndex(
+        selectedIndex,
+        SELECTABLE_OPENWIKI_PROVIDERS.length,
+      ),
+    };
+  }
+
   if (input.startsWith("/model")) {
     const selectedIndex =
       currentState.kind === "model"
         ? currentState.selectedIndex
-        : getCurrentModelOptionIndex(currentModelId);
+        : getCurrentModelOptionIndex(currentModelId, currentProvider);
 
     return {
       kind: "model",
       selectedIndex: clampMenuIndex(
         selectedIndex,
-        getModelMenuOptions(currentModelId).length,
+        getModelMenuOptions(currentModelId, currentProvider).length,
       ),
     };
   }
@@ -1742,6 +1933,7 @@ function moveMenuSelection(
   menuState: ChatInputMenuState,
   offset: number,
   currentModelId: string,
+  currentProvider: OpenWikiProvider,
 ): ChatInputMenuState {
   if (menuState.kind === "none") {
     return menuState;
@@ -1749,8 +1941,10 @@ function moveMenuSelection(
 
   const itemCount =
     menuState.kind === "model"
-      ? getModelMenuOptions(currentModelId).length
-      : slashCommandOptions.length;
+      ? getModelMenuOptions(currentModelId, currentProvider).length
+      : menuState.kind === "provider"
+        ? SELECTABLE_OPENWIKI_PROVIDERS.length
+        : slashCommandOptions.length;
 
   return {
     ...menuState,
@@ -1766,25 +1960,55 @@ function getCommandOptionIndex(input: string): number {
   return matchingIndex === -1 ? 0 : matchingIndex;
 }
 
-function getCurrentModelOptionIndex(currentModelId: string): number {
-  const matchingIndex = getModelMenuOptions(currentModelId).findIndex(
+function getCurrentModelOptionIndex(
+  currentModelId: string,
+  currentProvider: OpenWikiProvider,
+): number {
+  const matchingIndex = getModelMenuOptions(
+    currentModelId,
+    currentProvider,
+  ).findIndex(
     (option) => option.kind === "model" && option.modelId === currentModelId,
   );
 
   return matchingIndex === -1 ? 0 : matchingIndex;
 }
 
-function getModelMenuOptions(currentModelId: string): ModelMenuOption[] {
+function getCurrentProviderOptionIndex(
+  currentProvider: OpenWikiProvider,
+): number {
+  const matchingIndex = SELECTABLE_OPENWIKI_PROVIDERS.findIndex(
+    (provider) => provider === currentProvider,
+  );
+
+  return matchingIndex === -1 ? 0 : matchingIndex;
+}
+
+function getModelMenuOptions(
+  currentModelId: string,
+  currentProvider: OpenWikiProvider,
+): ModelMenuOption[] {
   const modelIds = Array.from(
-    new Set([currentModelId, ...SUGGESTED_MODEL_IDS].filter(Boolean)),
+    new Set(
+      [
+        currentModelId,
+        ...getProviderModelOptions(currentProvider).map((model) => model.id),
+      ].filter(Boolean),
+    ),
   );
 
   return [
-    ...modelIds.map((modelId) => ({
-      kind: "model" as const,
-      label: modelId,
-      modelId,
-    })),
+    ...modelIds.map((modelId) => {
+      const preset = getProviderModelOptions(currentProvider).find(
+        (model) => model.id === modelId,
+      );
+
+      return {
+        kind: "model" as const,
+        label: preset ? `${preset.label} ${modelId}` : modelId,
+        modelId,
+      };
+    }),
     {
       kind: "custom" as const,
       label: "Custom model ID",
@@ -2362,7 +2586,11 @@ function shouldShowCredentialDiagnostics(): boolean {
 }
 
 function getDisplayModelId(modelId: string | null): string {
-  return modelId ?? process.env[OPENWIKI_MODEL_ID_ENV_KEY] ?? DEFAULT_MODEL_ID;
+  return (
+    modelId ??
+    process.env[OPENWIKI_MODEL_ID_ENV_KEY] ??
+    getDefaultModelId(resolveConfiguredProvider())
+  );
 }
 
 function getErrorDiagnostics(error: unknown): ErrorDiagnostic[] {
@@ -2691,7 +2919,14 @@ function isOpenRouterServerError(error: unknown, message: string): boolean {
 function sanitizeDiagnosticText(value: string): string {
   let sanitized = value;
 
-  for (const key of [OPENROUTER_API_KEY_ENV_KEY, "LANGSMITH_API_KEY"]) {
+  for (const key of [
+    BASETEN_API_KEY_ENV_KEY,
+    FIREWORKS_API_KEY_ENV_KEY,
+    OPENAI_API_KEY_ENV_KEY,
+    ANTHROPIC_API_KEY_ENV_KEY,
+    OPENROUTER_API_KEY_ENV_KEY,
+    "LANGSMITH_API_KEY",
+  ]) {
     const secret = process.env[key];
 
     if (secret && secret.length > 0) {
@@ -2793,7 +3028,7 @@ if (parsedCommand.kind === "run" && !parsedCommand.dryRun) {
 
 const command = resolveStartupCommand(parsedCommand);
 
-if (argvRequestsPrint(argv) && command.kind === "error") {
+if (shouldPrintStartupError(argv, parsedCommand, command)) {
   process.stderr.write(`${command.message}\n`);
   process.exitCode = command.exitCode;
 } else if (command.kind === "run" && command.print && !command.dryRun) {
@@ -2804,6 +3039,19 @@ if (argvRequestsPrint(argv) && command.kind === "error") {
 
 function argvRequestsPrint(argv: string[]): boolean {
   return argv.some((arg) => arg === "-p" || arg === "--print");
+}
+
+function shouldPrintStartupError(
+  argv: string[],
+  parsedCommand: CliCommand,
+  command: CliCommand,
+): command is Extract<CliCommand, { kind: "error" }> {
+  return (
+    command.kind === "error" &&
+    (argvRequestsPrint(argv) ||
+      !process.stdin.isTTY ||
+      (parsedCommand.kind === "run" && parsedCommand.shouldStart))
+  );
 }
 
 function shouldAutoExitStartupRun(command: CliCommand): boolean {
@@ -2873,13 +3121,15 @@ function resolveStartupCommand(command: CliCommand): CliCommand {
       command.command === "update" ||
       !process.stdin.isTTY)
   ) {
-    const hasOpenRouterKey = Boolean(process.env[OPENROUTER_API_KEY_ENV_KEY]);
+    const provider = resolveConfiguredProvider();
+    const apiKeyEnvKey = getProviderApiKeyEnvKey(provider);
+    const hasProviderKey = Boolean(process.env[apiKeyEnvKey]);
 
-    if (!hasOpenRouterKey) {
+    if (!hasProviderKey) {
       return {
         kind: "error",
         exitCode: 1,
-        message: `${OPENROUTER_API_KEY_ENV_KEY} is required for non-interactive runs. Run openwiki in an interactive terminal to save credentials.`,
+        message: `${apiKeyEnvKey} is required for non-interactive runs. Run openwiki in an interactive terminal to save credentials.`,
       };
     }
   }

@@ -1,20 +1,29 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import {
-  DEFAULT_MODEL_ID,
+  DEFAULT_PROVIDER,
+  getDefaultModelId,
+  getProviderApiKeyEnvKey,
+  getProviderLabel,
+  getProviderModelOptions,
   isValidModelId,
   normalizeModelId,
-  OPENROUTER_API_KEY_ENV_KEY,
+  normalizeProvider,
   OPENWIKI_MODEL_ID_ENV_KEY,
-  SUGGESTED_MODEL_IDS,
+  OPENWIKI_PROVIDER_ENV_KEY,
+  type OpenWikiProvider,
+  resolveConfiguredProvider,
+  SELECTABLE_OPENWIKI_PROVIDERS,
 } from "./constants.js";
 import { openWikiEnvPath, saveOpenWikiEnv } from "./env.js";
 
 export type InitSetupResult = {
   modelId: string | null;
+  provider: OpenWikiProvider | null;
+  savedApiKey: boolean;
   savedLangSmithKey: boolean;
   savedModelId: boolean;
-  savedOpenRouterKey: boolean;
+  savedProvider: boolean;
 };
 
 type InitSetupProps = {
@@ -23,11 +32,17 @@ type InitSetupProps = {
   onError: (message: string) => void;
 };
 
-type PromptStep = "langsmith" | "model" | "openrouter";
+type PromptStep = "api-key" | "langsmith" | "model" | "provider";
 
-export function needsCredentialSetup(modelIdOverride?: string | null): boolean {
+export function needsCredentialSetup(
+  modelIdOverride: string | null = null,
+): boolean {
+  const provider = resolveConfiguredProvider();
+  const apiKeyEnvKey = getProviderApiKeyEnvKey(provider);
+
   return (
-    !process.env[OPENROUTER_API_KEY_ENV_KEY] ||
+    process.env[OPENWIKI_PROVIDER_ENV_KEY] === undefined ||
+    !process.env[apiKeyEnvKey] ||
     (modelIdOverride === null &&
       process.env[OPENWIKI_MODEL_ID_ENV_KEY] === undefined) ||
     process.env.LANGSMITH_API_KEY === undefined
@@ -39,8 +54,10 @@ export function InitSetup({
   onComplete,
   onError,
 }: InitSetupProps) {
+  const initialProvider = resolveConfiguredProvider();
   const [step, setStep] = useState<PromptStep | null>(null);
-  const [openRouterKey, setOpenRouterKey] = useState<string | null>(null);
+  const [provider, setProvider] = useState<OpenWikiProvider>(initialProvider);
+  const [apiKey, setApiKey] = useState<string | null>(null);
   const [modelId, setModelId] = useState<string | null>(null);
   const [langSmithKey, setLangSmithKey] = useState<string | null>(null);
   const [input, setInput] = useState("");
@@ -48,21 +65,24 @@ export function InitSetup({
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const initialStep = getInitialStep(modelIdOverride);
+    const initialStep = getInitialStep(modelIdOverride, initialProvider);
 
     if (initialStep === null) {
       onComplete({
         modelId:
           modelIdOverride ?? process.env[OPENWIKI_MODEL_ID_ENV_KEY] ?? null,
+        provider: initialProvider,
+        savedApiKey: false,
         savedLangSmithKey: false,
         savedModelId: false,
-        savedOpenRouterKey: false,
+        savedProvider: false,
       });
       return;
     }
 
+    setProvider(initialProvider);
     setStep(initialStep);
-  }, [modelIdOverride, onComplete]);
+  }, [initialProvider, modelIdOverride, onComplete]);
 
   useInput((inputValue, key) => {
     if (isSaving || step === null) {
@@ -87,17 +107,20 @@ export function InitSetup({
   async function submit() {
     setError(null);
 
-    if (step === "openrouter") {
-      const trimmedInput = input.trim();
+    if (step === "provider") {
+      const selectedProvider = parseProviderSelection(input);
 
-      if (trimmedInput.length === 0) {
-        setError("OpenRouter API key is required.");
+      if (!selectedProvider) {
+        setError("Enter a provider number or a valid provider ID.");
         return;
       }
 
-      setOpenRouterKey(trimmedInput);
+      setProvider(selectedProvider);
       setInput("");
-      const nextStep = getNextStepAfterOpenRouter(modelIdOverride);
+      const nextStep = getNextStepAfterProvider(
+        selectedProvider,
+        modelIdOverride,
+      );
 
       if (nextStep) {
         setStep(nextStep);
@@ -105,18 +128,45 @@ export function InitSetup({
       }
 
       await completeSetup({
+        nextApiKey: apiKey,
         nextLangSmithKey: langSmithKey,
         nextModelId: modelId,
-        nextOpenRouterKey: trimmedInput,
+        nextProvider: selectedProvider,
+      });
+      return;
+    }
+
+    if (step === "api-key") {
+      const trimmedInput = input.trim();
+
+      if (trimmedInput.length === 0) {
+        setError(`${getProviderApiKeyEnvKey(provider)} is required.`);
+        return;
+      }
+
+      setApiKey(trimmedInput);
+      setInput("");
+      const nextStep = getNextStepAfterApiKey(provider, modelIdOverride);
+
+      if (nextStep) {
+        setStep(nextStep);
+        return;
+      }
+
+      await completeSetup({
+        nextApiKey: trimmedInput,
+        nextLangSmithKey: langSmithKey,
+        nextModelId: modelId,
+        nextProvider: provider,
       });
       return;
     }
 
     if (step === "model") {
-      const selectedModelId = parseModelSelection(input);
+      const selectedModelId = parseModelSelection(input, provider);
 
       if (!selectedModelId) {
-        setError("Enter a model number or a valid OpenRouter model ID.");
+        setError("Enter a model number or a valid model ID.");
         return;
       }
 
@@ -129,9 +179,10 @@ export function InitSetup({
       }
 
       await completeSetup({
+        nextApiKey: apiKey,
         nextLangSmithKey: langSmithKey,
         nextModelId: selectedModelId,
-        nextOpenRouterKey: openRouterKey,
+        nextProvider: provider,
       });
       return;
     }
@@ -143,31 +194,40 @@ export function InitSetup({
       setInput("");
 
       await completeSetup({
+        nextApiKey: apiKey,
         nextLangSmithKey,
         nextModelId: modelId,
-        nextOpenRouterKey: openRouterKey,
+        nextProvider: provider,
       });
     }
   }
 
   type CompleteSetupOptions = {
+    nextApiKey: string | null;
     nextLangSmithKey: string | null;
     nextModelId: string | null;
-    nextOpenRouterKey: string | null;
+    nextProvider: OpenWikiProvider;
   };
 
   async function completeSetup({
+    nextApiKey,
     nextLangSmithKey,
     nextModelId,
-    nextOpenRouterKey,
+    nextProvider,
   }: CompleteSetupOptions) {
     setIsSaving(true);
 
     try {
       const updates: Record<string, string> = {};
+      const providerEnvChanged =
+        process.env[OPENWIKI_PROVIDER_ENV_KEY] !== nextProvider;
 
-      if (nextOpenRouterKey !== null) {
-        updates[OPENROUTER_API_KEY_ENV_KEY] = nextOpenRouterKey;
+      if (providerEnvChanged) {
+        updates[OPENWIKI_PROVIDER_ENV_KEY] = nextProvider;
+      }
+
+      if (nextApiKey !== null) {
+        updates[getProviderApiKeyEnvKey(nextProvider)] = nextApiKey;
       }
 
       if (nextModelId !== null) {
@@ -193,10 +253,12 @@ export function InitSetup({
           modelIdOverride ??
           process.env[OPENWIKI_MODEL_ID_ENV_KEY] ??
           null,
+        provider: nextProvider,
+        savedApiKey: nextApiKey !== null,
         savedLangSmithKey:
           nextLangSmithKey !== null && nextLangSmithKey.length > 0,
         savedModelId: nextModelId !== null,
-        savedOpenRouterKey: nextOpenRouterKey !== null,
+        savedProvider: providerEnvChanged,
       });
     } catch (saveError) {
       onError(
@@ -215,18 +277,29 @@ export function InitSetup({
 
       <Box flexDirection="column" marginBottom={1}>
         <SetupStep
-          label="OpenRouter key"
+          label="Provider"
           state={
-            process.env[OPENROUTER_API_KEY_ENV_KEY]
+            process.env[OPENWIKI_PROVIDER_ENV_KEY]
               ? "done"
-              : step === "openrouter"
+              : step === "provider"
+                ? "current"
+                : "pending"
+          }
+          detail={getProviderSetupDetail(provider)}
+        />
+        <SetupStep
+          label="Provider key"
+          state={
+            process.env[getProviderApiKeyEnvKey(provider)]
+              ? "done"
+              : step === "api-key"
                 ? "current"
                 : "pending"
           }
           detail={
-            process.env[OPENROUTER_API_KEY_ENV_KEY]
+            process.env[getProviderApiKeyEnvKey(provider)]
               ? "available from environment"
-              : `save to ${openWikiEnvPath}`
+              : `save ${getProviderApiKeyEnvKey(provider)} to ${openWikiEnvPath}`
           }
         />
         <SetupStep
@@ -238,7 +311,7 @@ export function InitSetup({
                 ? "current"
                 : "pending"
           }
-          detail={getModelSetupDetail(modelIdOverride)}
+          detail={getModelSetupDetail(modelIdOverride, provider)}
         />
         <SetupStep
           label="LangSmith"
@@ -260,7 +333,7 @@ export function InitSetup({
 
       <SetupPanel title="Prompt">
         {step ? (
-          <Prompt step={step} input={input} />
+          <Prompt input={input} provider={provider} step={step} />
         ) : (
           <Text>Inspecting OpenWiki setup...</Text>
         )}
@@ -299,7 +372,7 @@ function SetupHeader() {
         </Text>{" "}
         <Text color="gray">credential setup</Text>
       </Text>
-      <Text>Configure OpenRouter and local defaults.</Text>
+      <Text>Configure a model provider and local defaults.</Text>
     </Box>
   );
 }
@@ -351,15 +424,43 @@ function SetupPanel({ title, children }: SetupPanelProps) {
 }
 
 type PromptProps = {
-  step: PromptStep;
   input: string;
+  provider: OpenWikiProvider;
+  step: PromptStep;
 };
 
-function Prompt({ step, input }: PromptProps) {
-  if (step === "openrouter") {
+function Prompt({ input, provider, step }: PromptProps) {
+  if (step === "provider") {
+    return (
+      <Box flexDirection="column">
+        <Text>Choose a model provider. Enter selects {DEFAULT_PROVIDER}.</Text>
+        {SELECTABLE_OPENWIKI_PROVIDERS.map((providerOption, index) => (
+          <Text key={providerOption}>
+            <Text
+              color={providerOption === DEFAULT_PROVIDER ? "green" : "gray"}
+            >
+              {`${index + 1}.`.padStart(3)}
+            </Text>{" "}
+            {getProviderLabel(providerOption)}
+            <Text color="gray"> ({providerOption})</Text>
+            {providerOption === DEFAULT_PROVIDER ? (
+              <Text color="gray"> default</Text>
+            ) : null}
+          </Text>
+        ))}
+        <Text color="gray">Type a number or provider ID.</Text>
+        <Text>
+          <Text color="gray">$</Text> {OPENWIKI_PROVIDER_ENV_KEY}={" "}
+          <Text color="yellow">{input}</Text>
+        </Text>
+      </Box>
+    );
+  }
+
+  if (step === "api-key") {
     return (
       <Text>
-        <Text color="gray">$</Text> {OPENROUTER_API_KEY_ENV_KEY}={" "}
+        <Text color="gray">$</Text> {getProviderApiKeyEnvKey(provider)}={" "}
         <Text color="yellow">{mask(input)}</Text>
       </Text>
     );
@@ -369,15 +470,20 @@ function Prompt({ step, input }: PromptProps) {
     return (
       <Box flexDirection="column">
         <Text>
-          Choose an OpenRouter model. Enter selects {DEFAULT_MODEL_ID}.
+          Choose a {getProviderLabel(provider)} model. Enter selects{" "}
+          {getDefaultModelId(provider)}.
         </Text>
-        {SUGGESTED_MODEL_IDS.map((model, index) => (
-          <Text key={model}>
-            <Text color={model === DEFAULT_MODEL_ID ? "green" : "gray"}>
+        {getProviderModelOptions(provider).map((model, index) => (
+          <Text key={model.id}>
+            <Text
+              color={
+                model.id === getDefaultModelId(provider) ? "green" : "gray"
+              }
+            >
               {`${index + 1}.`.padStart(3)}
             </Text>{" "}
-            {model}
-            {model === DEFAULT_MODEL_ID ? (
+            {model.label} <Text color="gray">{model.id}</Text>
+            {model.id === getDefaultModelId(provider) ? (
               <Text color="gray"> default</Text>
             ) : null}
           </Text>
@@ -403,9 +509,16 @@ function Prompt({ step, input }: PromptProps) {
   return null;
 }
 
-function getInitialStep(modelIdOverride?: string | null): PromptStep | null {
-  if (!process.env[OPENROUTER_API_KEY_ENV_KEY]) {
-    return "openrouter";
+function getInitialStep(
+  modelIdOverride: string | null,
+  provider: OpenWikiProvider,
+): PromptStep | null {
+  if (process.env[OPENWIKI_PROVIDER_ENV_KEY] === undefined) {
+    return "provider";
+  }
+
+  if (!process.env[getProviderApiKeyEnvKey(provider)]) {
+    return "api-key";
   }
 
   if (
@@ -422,8 +535,20 @@ function getInitialStep(modelIdOverride?: string | null): PromptStep | null {
   return null;
 }
 
-function getNextStepAfterOpenRouter(
-  modelIdOverride?: string | null,
+function getNextStepAfterProvider(
+  provider: OpenWikiProvider,
+  modelIdOverride: string | null,
+): PromptStep | null {
+  if (!process.env[getProviderApiKeyEnvKey(provider)]) {
+    return "api-key";
+  }
+
+  return getNextStepAfterApiKey(provider, modelIdOverride);
+}
+
+function getNextStepAfterApiKey(
+  provider: OpenWikiProvider,
+  modelIdOverride: string | null,
 ): PromptStep | null {
   if (
     modelIdOverride === null &&
@@ -439,7 +564,18 @@ function getNextStepAfterOpenRouter(
   return null;
 }
 
-function getModelSetupDetail(modelIdOverride?: string | null): string {
+function getProviderSetupDetail(provider: OpenWikiProvider): string {
+  if (process.env[OPENWIKI_PROVIDER_ENV_KEY]) {
+    return getProviderLabel(provider);
+  }
+
+  return `default ${getProviderLabel(DEFAULT_PROVIDER)}`;
+}
+
+function getModelSetupDetail(
+  modelIdOverride: string | null,
+  provider: OpenWikiProvider,
+): string {
   if (modelIdOverride) {
     return `using ${modelIdOverride} for this run`;
   }
@@ -448,19 +584,41 @@ function getModelSetupDetail(modelIdOverride?: string | null): string {
     return process.env[OPENWIKI_MODEL_ID_ENV_KEY] ?? "";
   }
 
-  return `default ${DEFAULT_MODEL_ID}`;
+  return `default ${getDefaultModelId(provider)}`;
 }
 
-function parseModelSelection(value: string): string | null {
+function parseProviderSelection(value: string): OpenWikiProvider | null {
   const trimmedInput = value.trim();
 
   if (trimmedInput.length === 0) {
-    return DEFAULT_MODEL_ID;
+    return DEFAULT_PROVIDER;
   }
 
   if (/^\d+$/u.test(trimmedInput)) {
     const selectedIndex = Number(trimmedInput) - 1;
-    const selectedModelId = SUGGESTED_MODEL_IDS[selectedIndex];
+
+    return SELECTABLE_OPENWIKI_PROVIDERS[selectedIndex] ?? null;
+  }
+
+  const provider = normalizeProvider(trimmedInput);
+
+  return provider === "openrouter" ? null : provider;
+}
+
+function parseModelSelection(
+  value: string,
+  provider: OpenWikiProvider,
+): string | null {
+  const trimmedInput = value.trim();
+
+  if (trimmedInput.length === 0) {
+    return getDefaultModelId(provider);
+  }
+
+  if (/^\d+$/u.test(trimmedInput)) {
+    const selectedIndex = Number(trimmedInput) - 1;
+    const selectedModelId =
+      getProviderModelOptions(provider)[selectedIndex]?.id;
 
     return selectedModelId ?? null;
   }

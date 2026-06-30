@@ -200,7 +200,7 @@ export const helpContent: HelpContent = {
     },
     {
       label: "--modelId <id>",
-      description: "Use an OpenRouter model for this run.",
+      description: "Use a model ID for this run.",
     },
   ],
   developmentOptions: [
@@ -215,8 +215,8 @@ export const helpContent: HelpContent = {
     "openwiki --update",
     'openwiki "What can you do?"',
     'openwiki -p "Summarize what OpenWiki can do"',
-    "openwiki --modelId openai/gpt-5.5",
-    'openwiki --update --modelId openai/gpt-5.5 "Please document the API routes first"',
+    "openwiki --modelId gpt-5.5",
+    'openwiki --update --modelId gpt-5.5 "Please document the API routes first"',
   ],
   developmentExamples: ["openwiki --dry-run"],
 };

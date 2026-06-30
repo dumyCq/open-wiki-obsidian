@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
 import path from "node:path";
+import { ChatAnthropic } from "@langchain/anthropic";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
+import { ChatOpenAI } from "@langchain/openai";
 import { ChatOpenRouter } from "@langchain/openrouter";
 import { createDeepAgent, LocalShellBackend } from "deepagents";
 import { loadOpenWikiEnv, openWikiEnvDir } from "../env.js";
@@ -13,13 +15,23 @@ import type {
   OpenWikiRunResult,
 } from "./types.js";
 import {
-  DEFAULT_MODEL_ID,
+  ANTHROPIC_API_KEY_ENV_KEY,
+  BASETEN_API_KEY_ENV_KEY,
+  FIREWORKS_API_KEY_ENV_KEY,
+  getDefaultModelId,
+  getProviderApiKeyEnvKey,
+  getProviderConfig,
+  getProviderLabel,
   isValidModelId,
   normalizeModelId,
+  OPENAI_API_KEY_ENV_KEY,
   OPENROUTER_API_KEY_ENV_KEY,
   OPENROUTER_BASE_URL,
   OPENROUTER_FALLBACK_MODEL_IDS,
   OPENWIKI_MODEL_ID_ENV_KEY,
+  OPENWIKI_PROVIDER_ENV_KEY,
+  resolveConfiguredProvider,
+  type OpenWikiProvider,
 } from "../constants.js";
 import {
   createOpenWikiContentSnapshot,
@@ -39,18 +51,23 @@ export async function runOpenWikiAgent(
     `userMessage=${options.userMessage ? "provided" : "not-provided"}`,
   );
   emitDebug(options, `userMessage.followup=${options.isFollowup === true}`);
-  emitDebug(
-    options,
-    `openrouter.baseUrl=${JSON.stringify(OPENROUTER_BASE_URL)}`,
-  );
   emitDebug(options, `env.beforeLoad ${formatEnvironmentDebug()}`);
 
   await loadOpenWikiEnv();
   emitDebug(options, "env=loaded ~/.openwiki/.env");
   emitDebug(options, `env.afterLoad ${formatEnvironmentDebug()}`);
-  ensureOpenRouterKey();
-  emitDebug(options, "credentials=openrouter key present");
-  const modelId = resolveModelId(options);
+  const provider = resolveConfiguredProvider();
+  const providerConfig = getProviderConfig(provider);
+  emitDebug(options, `provider=${provider}`);
+  if (providerConfig.baseURL) {
+    emitDebug(
+      options,
+      `provider.baseUrl=${JSON.stringify(providerConfig.baseURL)}`,
+    );
+  }
+  ensureProviderKey(provider);
+  emitDebug(options, `credentials=${provider} key present`);
+  const modelId = resolveModelId(options, provider);
   emitDebug(options, `model=${modelId}`);
 
   const debugFetchCapture = installOpenRouterDebugFetch(options);
@@ -60,6 +77,7 @@ export async function runOpenWikiAgent(
       command,
       cwd,
       options,
+      provider,
       modelId,
       debugFetchCapture,
     );
@@ -75,10 +93,11 @@ async function runOpenWikiAgentWithModelFallbacks(
   command: OpenWikiCommand,
   cwd: string,
   options: OpenWikiRunOptions,
+  provider: OpenWikiProvider,
   modelId: string,
   debugFetchCapture: OpenRouterFetchCapture,
 ): Promise<OpenWikiRunResult> {
-  const modelAttempts = createModelRoute(modelId);
+  const modelAttempts = createModelRoute(provider, modelId);
   let lastError: unknown = null;
 
   for (const [attemptIndex, attemptModelId] of modelAttempts.entries()) {
@@ -98,6 +117,7 @@ async function runOpenWikiAgentWithModelFallbacks(
         command,
         cwd,
         attemptOptions,
+        provider,
         attemptModelId,
       );
     } catch (error) {
@@ -134,6 +154,7 @@ async function runOpenWikiAgentCore(
   command: OpenWikiCommand,
   cwd: string,
   options: OpenWikiRunOptions,
+  provider: OpenWikiProvider,
   modelId: string,
 ): Promise<OpenWikiRunResult> {
   const context = await createRunContext(command, cwd);
@@ -141,13 +162,16 @@ async function runOpenWikiAgentCore(
   const openWikiSnapshotBefore =
     command === "chat" ? null : await createOpenWikiContentSnapshot(cwd);
   emitDebug(options, "openwiki.snapshot=created");
-  const model = await createModel(modelId);
-  emitDebug(
-    options,
-    `openrouter.route=fallback models=${JSON.stringify(
-      createModelRoute(modelId),
-    )}`,
-  );
+  const model = await createModel(provider, modelId);
+  emitDebug(options, `model.provider=${provider}`);
+  if (provider === "openrouter") {
+    emitDebug(
+      options,
+      `openrouter.route=fallback models=${JSON.stringify(
+        createModelRoute(provider, modelId),
+      )}`,
+    );
+  }
   emitDebug(options, "model=initialized");
   const checkpointer = await createCheckpointer();
   emitDebug(options, `checkpointer=${formatUrlDebugValue(checkpointPath)}`);
@@ -324,44 +348,76 @@ function isFileNotFoundError(error: unknown): boolean {
   );
 }
 
-function ensureOpenRouterKey(): void {
-  if (!process.env[OPENROUTER_API_KEY_ENV_KEY]) {
+function ensureProviderKey(provider: OpenWikiProvider): void {
+  const apiKeyEnvKey = getProviderApiKeyEnvKey(provider);
+
+  if (!process.env[apiKeyEnvKey]) {
     throw new Error(
-      `${OPENROUTER_API_KEY_ENV_KEY} is required to run the OpenWiki agent.`,
+      `${apiKeyEnvKey} is required to run OpenWiki with ${getProviderLabel(provider)}.`,
     );
   }
 }
 
-function resolveModelId(options: OpenWikiRunOptions): string {
+function resolveModelId(
+  options: OpenWikiRunOptions,
+  provider: OpenWikiProvider,
+): string {
   const rawModelId =
     options.modelId ??
     process.env[OPENWIKI_MODEL_ID_ENV_KEY] ??
-    DEFAULT_MODEL_ID;
+    getDefaultModelId(provider);
   const modelId = normalizeModelId(rawModelId);
 
   if (!isValidModelId(modelId)) {
     throw new Error(
-      `Invalid OpenRouter model ID configured in ${OPENWIKI_MODEL_ID_ENV_KEY}.`,
+      `Invalid model ID configured in ${OPENWIKI_MODEL_ID_ENV_KEY}.`,
     );
   }
 
   return modelId;
 }
 
-async function createModel(modelId: string) {
-  const models = createModelRoute(modelId);
+async function createModel(provider: OpenWikiProvider, modelId: string) {
+  if (provider === "anthropic") {
+    return new ChatAnthropic(modelId, {
+      apiKey: process.env[getProviderApiKeyEnvKey(provider)],
+    });
+  }
 
-  return new ChatOpenRouter({
-    apiKey: process.env[OPENROUTER_API_KEY_ENV_KEY],
-    baseURL: OPENROUTER_BASE_URL,
+  if (provider === "openrouter") {
+    const models = createModelRoute(provider, modelId);
+
+    return new ChatOpenRouter({
+      apiKey: process.env[OPENROUTER_API_KEY_ENV_KEY],
+      baseURL: OPENROUTER_BASE_URL,
+      model: modelId,
+      models,
+      route: "fallback",
+      siteName: "OpenWiki",
+    });
+  }
+
+  const providerConfig = getProviderConfig(provider);
+
+  return new ChatOpenAI({
+    apiKey: process.env[getProviderApiKeyEnvKey(provider)],
+    configuration: providerConfig.baseURL
+      ? {
+          baseURL: providerConfig.baseURL,
+        }
+      : undefined,
     model: modelId,
-    models,
-    route: "fallback",
-    siteName: "OpenWiki",
   });
 }
 
-function createModelRoute(modelId: string): string[] {
+function createModelRoute(
+  provider: OpenWikiProvider,
+  modelId: string,
+): string[] {
+  if (provider !== "openrouter") {
+    return [modelId];
+  }
+
   return Array.from(new Set([modelId, ...OPENROUTER_FALLBACK_MODEL_IDS]));
 }
 
@@ -1202,6 +1258,11 @@ function formatOpenRouterDebugUrl(value: string): string {
 
 function formatEnvironmentDebug(): string {
   const keys = [
+    OPENWIKI_PROVIDER_ENV_KEY,
+    BASETEN_API_KEY_ENV_KEY,
+    FIREWORKS_API_KEY_ENV_KEY,
+    OPENAI_API_KEY_ENV_KEY,
+    ANTHROPIC_API_KEY_ENV_KEY,
     OPENROUTER_API_KEY_ENV_KEY,
     OPENWIKI_MODEL_ID_ENV_KEY,
     "LANGCHAIN_TRACING_V2",
@@ -1227,7 +1288,7 @@ function formatDebugValue(key: string, value: string | undefined): string {
     return `set(length=${value.length})`;
   }
 
-  if (key === OPENWIKI_MODEL_ID_ENV_KEY) {
+  if (key === OPENWIKI_MODEL_ID_ENV_KEY || key === OPENWIKI_PROVIDER_ENV_KEY) {
     return `set(value=${JSON.stringify(value)})`;
   }
 
