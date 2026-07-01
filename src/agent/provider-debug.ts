@@ -484,8 +484,13 @@ function detectProviderApiKind(url: string): string {
     return "chat-completions";
   }
 
-  if (url.includes("api.anthropic.com")) {
-    return "anthropic-messages";
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.hostname.toLowerCase() === "api.anthropic.com") {
+      return "anthropic-messages";
+    }
+  } catch {
+    // Ignore invalid URLs and fall through to unknown.
   }
 
   return "unknown";
