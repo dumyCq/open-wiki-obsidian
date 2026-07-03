@@ -33,7 +33,7 @@ export type CliCommand =
       action: "start";
       exitCode: 0;
       port: number;
-      url: string;
+      url: string | null;
     }
   | {
       kind: "ingest";
@@ -129,16 +129,17 @@ export function parseCommand(argv: string[]): CliCommand {
   }
 
   if (argv[0] === "ngrok") {
-    if (argv[1] !== "start" || !argv[2]) {
+    if (argv[1] !== "start") {
       return {
         kind: "error",
         exitCode: 1,
-        message: "Usage: openwiki ngrok start <url> [--port <port>]",
+        message: "Usage: openwiki ngrok start [url] [--port <port>]",
       };
     }
 
     let port = 53682;
-    const optionArgs = argv.slice(3);
+    let url: string | null = null;
+    const optionArgs = argv.slice(2);
     for (let index = 0; index < optionArgs.length; index += 1) {
       const arg = optionArgs[index];
 
@@ -158,6 +159,11 @@ export function parseCommand(argv: string[]): CliCommand {
 
       if (arg.startsWith("--port=")) {
         port = Number(arg.slice("--port=".length));
+        continue;
+      }
+
+      if (!arg.startsWith("-") && url === null) {
+        url = arg;
         continue;
       }
 
@@ -181,7 +187,7 @@ export function parseCommand(argv: string[]): CliCommand {
       action: "start",
       exitCode: 0,
       port,
-      url: argv[2],
+      url,
     };
   }
 
@@ -446,7 +452,7 @@ export const helpContent: HelpContent = {
     "openwiki cron pause <source|all>",
     "openwiki cron resume <source|all>",
     "openwiki cron delete <source|all>",
-    "openwiki ngrok start <url> [--port <port>]",
+    "openwiki ngrok start [url] [--port <port>]",
   ],
   commands: [
     {
@@ -492,9 +498,9 @@ export const helpContent: HelpContent = {
         "Delete saved connector schedules and remove stale local schedule files.",
     },
     {
-      label: "openwiki ngrok start <url>",
+      label: "openwiki ngrok start [url]",
       description:
-        "Start an ngrok tunnel for Slack OAuth and save the Slack HTTPS redirect URI.",
+        "Start an ngrok tunnel for Slack OAuth, optionally using a fixed HTTPS URL.",
     },
   ],
   options: [
@@ -541,6 +547,7 @@ export const helpContent: HelpContent = {
     "openwiki auth gmail",
     "openwiki auth notion",
     "openwiki auth tools notion",
+    "openwiki ngrok start",
     "openwiki ngrok start https://openwiki.ngrok.app",
   ],
   developmentExamples: ["openwiki --dry-run"],

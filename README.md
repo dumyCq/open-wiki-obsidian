@@ -82,12 +82,16 @@ openwiki auth notion
 Start an ngrok tunnel for Slack OAuth:
 
 ```sh
-openwiki ngrok start https://<your-ngrok-domain>
+openwiki ngrok start
 ```
 
-This saves `OPENWIKI_HTTPS_OAUTH_REDIRECT_URI` for Slack's HTTPS OAuth
-callback. X/Twitter and Gmail auth ignore that HTTPS override and keep using the
-local loopback callback, `http://127.0.0.1:53682/callback`.
+This starts ngrok with a random HTTPS forwarding URL. OpenWiki reads ngrok's
+local inspection API, appends `/callback`, and saves
+`OPENWIKI_HTTPS_OAUTH_REDIRECT_URI` automatically. Register the printed callback
+URL in Slack. If you have a fixed ngrok domain, run
+`openwiki ngrok start https://<your-ngrok-domain>`. X/Twitter and Gmail auth
+ignore that HTTPS override and keep using the local loopback callback,
+`http://127.0.0.1:53682/callback`.
 
 `openwiki` creates initial documentation in `openwiki/` when no wiki exists. If `openwiki/` already exists, it refreshes that documentation from repository changes. By default, the CLI stays open after each run so you can send follow-up messages. Use `-p` or `--print` for a one-shot non-interactive run that prints the final assistant output.
 
