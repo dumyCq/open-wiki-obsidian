@@ -15,7 +15,7 @@ npm install -g openwiki
 Initialize OpenWiki, configure your model and API key, then generate documentation
 
 ```sh
-openwiki --init
+openwiki brain --init
 ```
 
 OpenWiki has two modes:
@@ -26,9 +26,8 @@ OpenWiki has two modes:
 - **Code mode** builds repository documentation in `openwiki/` for the current
   codebase.
 
-The interactive `openwiki --init` flow asks which mode to use. You can also be
-explicit with `openwiki brain --init`, `openwiki code --init`, or
-`openwiki --init --mode <brain|code>`.
+Choose `openwiki brain --init` for a local second-brain wiki or
+`openwiki code --init` for repository documentation.
 
 Then to ensure your documentation stays up-to-date, add the GitHub action to your repository to automatically open a PR once a day with documentation updates: [openwiki-update.yml](./examples/openwiki-update.yml)
 
@@ -63,18 +62,10 @@ openwiki -p "Summarize what you can do"
 Initialize OpenWiki:
 
 ```sh
-openwiki --init
+openwiki brain --init
 ```
 
-The interactive init flow asks whether to initialize Brain mode or Code mode.
-
-Initialize repository code documentation instead of the default local brain wiki:
-
-```sh
-openwiki --init --mode code
-```
-
-You can also use the positional mode command:
+Initialize repository code documentation:
 
 ```sh
 openwiki code --init
@@ -133,7 +124,7 @@ ignore that HTTPS override and keep using the local loopback callback,
 
 `openwiki` creates initial repository documentation in `openwiki/` when no wiki exists. Source ingestion runs and scheduled connector updates maintain the local general-purpose wiki in `~/.openwiki/wiki/`. By default, the CLI stays open after each run so you can send follow-up messages. Use `-p` or `--print` for a one-shot non-interactive run that prints the final assistant output.
 
-Use `--mode brain` for the local second-brain wiki or `--mode code` for repository documentation. Bare interactive `openwiki --init` prompts for a mode; non-interactive runs and `openwiki --update` default to brain mode.
+Use `openwiki brain --init` for the local second-brain wiki or `openwiki code --init` for repository documentation. Bare `openwiki --init` is no longer supported because init needs an explicit mode. `openwiki --update` defaults to brain mode unless you pass `code`, `brain`, or `--mode`.
 
 `openwiki` will automatically append prompting to your `AGENTS.md` and/or `CLAUDE.md` files to instruct your coding agent to reference it when searching for context. If the file does not already exist in your repository, OpenWiki will create it for you.
 

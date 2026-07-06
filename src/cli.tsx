@@ -17,7 +17,6 @@ import {
   type CliCommand,
   type HelpRow,
   type OpenWikiRunMode,
-  type OpenWikiRunModeSource,
 } from "./commands.js";
 import {
   InitSetup,
@@ -197,8 +196,7 @@ function App({ command }: AppProps) {
     !command.dryRun &&
     process.stdin.isTTY &&
     runState.status === "idle" &&
-    (needsCredentialSetup(sessionModelId, runMode) ||
-      shouldPromptForStartupRunMode(command));
+    needsCredentialSetup(sessionModelId, runMode);
   const displayModelId = sessionModelId ?? startupModelId;
 
   function submitChatMessage(message: string) {
@@ -582,7 +580,7 @@ function App({ command }: AppProps) {
   if (shouldRunInteractiveCredentialSetup) {
     return (
       <InitSetup
-        allowModeSelection={shouldPromptForStartupRunMode(command)}
+        allowModeSelection={false}
         mode={command.mode}
         modelIdOverride={command.modelId}
         onComplete={(result) => {
@@ -3813,6 +3811,7 @@ function shouldPrintStartupError(
     command.kind === "error" &&
     (argvRequestsPrint(argv) ||
       !process.stdin.isTTY ||
+      command.message.startsWith("openwiki --init requires a mode.") ||
       (parsedCommand.kind === "run" && parsedCommand.shouldStart))
   );
 }
@@ -3832,20 +3831,6 @@ function shouldAutoExitStartupRun(command: CliCommand): boolean {
     !command.print &&
     command.shouldStart &&
     (command.command === "init" || command.command === "update")
-  );
-}
-
-function shouldPromptForStartupRunMode(
-  command: CliCommand,
-): command is Extract<
-  CliCommand,
-  { kind: "run"; modeSource: OpenWikiRunModeSource }
-> {
-  return (
-    command.kind === "run" &&
-    command.command === "init" &&
-    command.modeSource === "default" &&
-    command.shouldStart
   );
 }
 

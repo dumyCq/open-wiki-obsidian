@@ -8,7 +8,8 @@ From `src/commands.ts` and `README.md`, the supported entry patterns are:
 
 - `openwiki` — open the interactive chat UI.
 - `openwiki "message"` — send a chat message immediately, then stay open.
-- `openwiki --init [message]` — generate initial OpenWiki documentation.
+- `openwiki brain --init [message]` — generate initial local second-brain wiki documentation.
+- `openwiki code --init [message]` — generate initial repository documentation.
 - `openwiki --update [message]` — refresh existing OpenWiki documentation.
 - `openwiki -p, --print` — run once and print the final assistant output (non-interactive).
 - `openwiki --modelId <id>` / `--model-id <id>` — choose a model ID for the run.
@@ -19,7 +20,7 @@ The parser rejects incompatible combinations such as `--init` and `--update` tog
 
 ### Auto-exit for init/update
 
-When `--init` or `--update` is run in a TTY (without `--print`), the CLI starts the run, streams agent output, and **exits automatically on success** (`shouldAutoExitStartupRun` in `src/cli.tsx`). This means `openwiki --init` behaves like a one-shot command while still showing a live UI. Chat runs and `--print` runs are not affected — chat stays open for follow-ups, and `--print` writes to stdout and exits.
+When explicit init (`openwiki brain --init` or `openwiki code --init`) or `--update` is run in a TTY (without `--print`), the CLI starts the run, streams agent output, and **exits automatically on success** (`shouldAutoExitStartupRun` in `src/cli.tsx`). Chat runs and `--print` runs are not affected — chat stays open for follow-ups, and `--print` writes to stdout and exits.
 
 ### Non-interactive mode
 

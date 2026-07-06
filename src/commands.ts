@@ -489,6 +489,15 @@ function parseRunCommand(
     userMessageParts.length > 0 ? userMessageParts.join(" ") : null;
   const shouldStart = command !== "chat" || userMessage !== null;
 
+  if (command === "init" && modeSource === "default") {
+    return {
+      kind: "error",
+      exitCode: 1,
+      message:
+        "openwiki --init requires a mode.\n\nRun one of:\n  openwiki brain --init  Build a local second-brain wiki in ~/.openwiki/wiki.\n  openwiki code --init   Build repository documentation in ./openwiki.",
+    };
+  }
+
   if (print && !shouldStart) {
     return {
       kind: "error",
@@ -551,7 +560,6 @@ export const helpContent: HelpContent = {
     "openwiki --mode <brain|code> [--init|--update] [message]",
     "openwiki [--modelId <model>]",
     "openwiki [--modelId <model>] [message]",
-    "openwiki --init [message]",
     "openwiki --update [message]",
     "openwiki auth <provider>",
     "openwiki auth configure <provider> [--force]",
@@ -625,7 +633,8 @@ export const helpContent: HelpContent = {
   options: [
     {
       label: "--init",
-      description: "Generate initial OpenWiki documentation.",
+      description:
+        "Generate initial OpenWiki documentation for a selected mode. Use openwiki brain --init or openwiki code --init.",
     },
     {
       label: "--update",
@@ -654,8 +663,8 @@ export const helpContent: HelpContent = {
   ],
   examples: [
     "openwiki",
-    "openwiki --init",
-    "openwiki --init --mode code",
+    "openwiki brain --init",
+    "openwiki code --init",
     "openwiki --update",
     "openwiki --update --mode brain",
     'openwiki "What can you do?"',
