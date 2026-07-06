@@ -1,5 +1,9 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { OPENWIKI_VERSION } from "../constants.js";
+import {
+  getOAuthAccessToken,
+  getOAuthProviderIdForAccessTokenEnvKey,
+} from "../auth/tokens.js";
 import type { McpConnectorConfig, McpReadOnlyOperation } from "./types.js";
 
 type JsonRpcRequest = {
@@ -288,7 +292,7 @@ async function executeHttpMcp(
   const url = validateMcpUrl(transport.url);
   const client = new HttpJsonRpcClient(
     url,
-    resolveHeaders(transport.headers ?? {}),
+    await resolveHeaders(transport.headers ?? {}),
   );
   await client.initialize();
 
@@ -324,7 +328,7 @@ async function executeHttpMcpTool(
   const url = validateMcpUrl(transport.url);
   const client = new HttpJsonRpcClient(
     url,
-    resolveHeaders(transport.headers ?? {}),
+    await resolveHeaders(transport.headers ?? {}),
   );
   await client.initialize();
 
@@ -347,7 +351,7 @@ async function listHttpMcpTools(
   const url = validateMcpUrl(transport.url);
   const client = new HttpJsonRpcClient(
     url,
-    resolveHeaders(transport.headers ?? {}),
+    await resolveHeaders(transport.headers ?? {}),
   );
   await client.initialize();
 
@@ -726,18 +730,25 @@ function resolveChildEnv(
   );
 }
 
-function resolveHeaders(
+async function resolveHeaders(
   headers: Record<string, string>,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(headers).map(([key, value]) => [
+): Promise<Record<string, string>> {
+  const resolvedEntries = [];
+
+  for (const [key, value] of Object.entries(headers)) {
+    resolvedEntries.push([
       validateHeaderName(key),
-      resolveTemplateEnvReferences(value, key),
-    ]),
-  );
+      await resolveTemplateEnvReferences(value, key),
+    ]);
+  }
+
+  return Object.fromEntries(resolvedEntries);
 }
 
-function resolveTemplateEnvReferences(value: string, key: string): string {
+async function resolveTemplateEnvReferences(
+  value: string,
+  key: string,
+): Promise<string> {
   if (!value.includes("${")) {
     if (
       /(token|secret|authorization|api[-_]?key|bearer)/iu.test(
@@ -752,9 +763,27 @@ function resolveTemplateEnvReferences(value: string, key: string): string {
     return value;
   }
 
-  return value.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gu, (_match, envKey: string) =>
-    resolveEnvReference(envKey),
-  );
+  let resolvedValue = value;
+  const envRefs = value.matchAll(/\$\{([A-Z_][A-Z0-9_]*)\}/gu);
+
+  for (const match of envRefs) {
+    const envKey = match[1];
+    const envValue = await resolveHeaderEnvReference(envKey);
+    resolvedValue = resolvedValue.replace(match[0], envValue);
+  }
+
+  return resolvedValue;
+}
+
+async function resolveHeaderEnvReference(envKey: string): Promise<string> {
+  validateEnvKey(envKey);
+
+  const providerId = getOAuthProviderIdForAccessTokenEnvKey(envKey);
+  if (providerId) {
+    return await getOAuthAccessToken(providerId);
+  }
+
+  return resolveEnvReference(envKey);
 }
 
 function resolveEnvReference(value: string): string {

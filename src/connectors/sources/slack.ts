@@ -1,4 +1,5 @@
 import { OPENWIKI_SLACK_USER_TOKEN_ENV_KEY } from "../../constants.js";
+import { getOAuthAccessToken } from "../../auth/tokens.js";
 import {
   createRunId,
   readConnectorConfig,
@@ -180,8 +181,7 @@ async function ingest(
     };
   }
 
-  const accessToken = process.env[OPENWIKI_SLACK_USER_TOKEN_ENV_KEY];
-  if (!accessToken) {
+  if (!process.env[OPENWIKI_SLACK_USER_TOKEN_ENV_KEY]) {
     return {
       connectorId: "slack",
       message: `${OPENWIKI_SLACK_USER_TOKEN_ENV_KEY} is required for Slack ingestion.`,
@@ -193,6 +193,7 @@ async function ingest(
     };
   }
 
+  const accessToken = await getOAuthAccessToken("slack");
   const streams = normalizeStreams(options.streams, config.streams);
   const auth = await slackApi(accessToken, "auth.test", {});
   const userId = typeof auth.user_id === "string" ? auth.user_id : undefined;

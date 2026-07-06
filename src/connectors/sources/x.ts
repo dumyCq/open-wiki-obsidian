@@ -13,6 +13,7 @@ import type {
   ConnectorRuntime,
 } from "../types.js";
 import { OPENWIKI_X_ACCESS_TOKEN_ENV_KEY } from "../../constants.js";
+import { getOAuthAccessToken } from "../../auth/tokens.js";
 
 type XConfig = {
   enabled?: boolean;
@@ -89,8 +90,7 @@ async function ingest(
     };
   }
 
-  const accessToken = process.env[OPENWIKI_X_ACCESS_TOKEN_ENV_KEY];
-  if (!accessToken) {
+  if (!process.env[OPENWIKI_X_ACCESS_TOKEN_ENV_KEY]) {
     return {
       connectorId: "x",
       message: `${OPENWIKI_X_ACCESS_TOKEN_ENV_KEY} is required for X ingestion.`,
@@ -102,6 +102,7 @@ async function ingest(
     };
   }
 
+  const accessToken = await getOAuthAccessToken("x");
   const streams = normalizeStreams(options.streams, config.streams);
   const userId = config.userId ?? (await fetchAuthenticatedUserId(accessToken));
   const latestIds = { ...(state.latestIds ?? {}) };

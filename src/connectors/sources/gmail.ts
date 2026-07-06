@@ -1,10 +1,11 @@
 import {
   OPENWIKI_GMAIL_ACCESS_TOKEN_ENV_KEY,
   OPENWIKI_GMAIL_REFRESH_TOKEN_ENV_KEY,
-  OPENWIKI_GOOGLE_CLIENT_ID_ENV_KEY,
-  OPENWIKI_GOOGLE_CLIENT_SECRET_ENV_KEY,
 } from "../../constants.js";
-import { saveOpenWikiEnv } from "../../env.js";
+import {
+  getOAuthAccessToken,
+  refreshOAuthAccessToken,
+} from "../../auth/tokens.js";
 import {
   createRunId,
   readConnectorConfig,
@@ -46,16 +47,7 @@ type GmailMessageRef = {
   threadId?: string;
 };
 
-type GmailTokenResponse = {
-  access_token?: string;
-  expires_in?: number;
-  token_type?: string;
-};
-
 const GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1";
-const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GMAIL_TOKEN_EXPIRES_AT_ENV_KEY = "OPENWIKI_GMAIL_TOKEN_EXPIRES_AT";
-const GMAIL_TOKEN_TYPE_ENV_KEY = "OPENWIKI_GMAIL_TOKEN_TYPE";
 
 const DEFAULT_METADATA_HEADERS = [
   "From",
@@ -124,7 +116,7 @@ async function ingest(
     );
   }
 
-  const accessToken = await getGmailAccessToken();
+  const accessToken = await getOAuthAccessToken("gmail");
   const messageLimit = getOptionLimit(options.limit, config.maxMessages);
   const query = getWindowedGmailQuery(config.query, options.windowHours);
   const listResult = await listGmailMessages(accessToken, {
@@ -286,7 +278,7 @@ async function gmailApi<T>(
     return (await parseGmailResponse(response)) as T;
   }
 
-  const refreshedToken = await refreshGmailAccessToken();
+  const refreshedToken = await refreshOAuthAccessToken("gmail");
   const retryResponse = await fetchGmail(
     refreshedToken,
     endpointPath,
@@ -326,89 +318,6 @@ async function parseGmailResponse(response: Response): Promise<unknown> {
   }
 
   return await response.json();
-}
-
-async function getGmailAccessToken(): Promise<string> {
-  const accessToken = process.env[OPENWIKI_GMAIL_ACCESS_TOKEN_ENV_KEY];
-
-  if (accessToken && !isGmailAccessTokenExpired()) {
-    return accessToken;
-  }
-
-  return await refreshGmailAccessToken();
-}
-
-async function refreshGmailAccessToken(): Promise<string> {
-  const refreshToken = process.env[OPENWIKI_GMAIL_REFRESH_TOKEN_ENV_KEY];
-  const clientId = process.env[OPENWIKI_GOOGLE_CLIENT_ID_ENV_KEY];
-  const clientSecret = process.env[OPENWIKI_GOOGLE_CLIENT_SECRET_ENV_KEY];
-
-  if (!refreshToken) {
-    throw new Error(
-      `${OPENWIKI_GMAIL_REFRESH_TOKEN_ENV_KEY} is required for Gmail ingestion.`,
-    );
-  }
-
-  if (!clientId || !clientSecret) {
-    throw new Error(
-      `${OPENWIKI_GOOGLE_CLIENT_ID_ENV_KEY} and ${OPENWIKI_GOOGLE_CLIENT_SECRET_ENV_KEY} are required to refresh Gmail access.`,
-    );
-  }
-
-  const response = await fetch(GOOGLE_TOKEN_URL, {
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-    }),
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Gmail token refresh failed: ${response.status}`);
-  }
-
-  const tokenResponse = (await response.json()) as GmailTokenResponse;
-  if (!tokenResponse.access_token) {
-    throw new Error("Gmail token refresh did not return an access token.");
-  }
-
-  const updates: Record<string, string> = {
-    [OPENWIKI_GMAIL_ACCESS_TOKEN_ENV_KEY]: tokenResponse.access_token,
-  };
-
-  if (tokenResponse.expires_in) {
-    updates[GMAIL_TOKEN_EXPIRES_AT_ENV_KEY] = new Date(
-      Date.now() + tokenResponse.expires_in * 1000,
-    ).toISOString();
-  }
-
-  if (tokenResponse.token_type) {
-    updates[GMAIL_TOKEN_TYPE_ENV_KEY] = tokenResponse.token_type;
-  }
-
-  await saveOpenWikiEnv(updates);
-
-  return tokenResponse.access_token;
-}
-
-function isGmailAccessTokenExpired(): boolean {
-  const expiresAt = process.env[GMAIL_TOKEN_EXPIRES_AT_ENV_KEY];
-  if (!expiresAt) {
-    return false;
-  }
-
-  const timestamp = Date.parse(expiresAt);
-  if (!Number.isFinite(timestamp)) {
-    return true;
-  }
-
-  return timestamp <= Date.now() + 60_000;
 }
 
 function isGmailEnabled(config: GmailConfig): boolean {
