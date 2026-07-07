@@ -80,6 +80,7 @@ type PromptStep =
   | "source-description-custom"
   | "source-menu"
   | "source-path"
+  | "source-projects"
   | "source-confirm-continue"
   | "source-secret"
   | "template"
@@ -320,7 +321,7 @@ const SOURCE_OPTIONS = [
     instructions: [
       "Create a LangSmith API key under Settings > API Keys.",
       "Paste the API key below.",
-      "List the LangSmith project names to monitor in the connector config or the goal screen.",
+      "On the next screen, list the LangSmith project (tracing session) names to monitor.",
     ],
     secretInputs: [
       {
@@ -1019,6 +1020,23 @@ export function InitSetup({
       return;
     }
 
+    if (step === "source-projects") {
+      const project = input.trim();
+
+      if (project.length === 0) {
+        setError("Enter a LangSmith project name.");
+        return;
+      }
+
+      setSourceState((state) => ({
+        ...state,
+        connectorConfig: { enabled: true, projects: [project] },
+      }));
+      setInput("");
+      setStep("source-description");
+      return;
+    }
+
     if (step === "source-description") {
       if (sourceDescriptionSelectionIndex >= selectedSource.examples.length) {
         setInput("");
@@ -1129,17 +1147,35 @@ export function InitSetup({
       selectedSourceId,
       onboardingConfig,
     );
+    // LangSmith sources are one-per-project, so label the instance with the
+    // project name rather than the generic "LangSmith N: <goal>".
+    const langSmithProject =
+      selectedSourceId === "langsmith" &&
+      connectorConfig &&
+      Array.isArray(connectorConfig.projects) &&
+      typeof connectorConfig.projects[0] === "string"
+        ? connectorConfig.projects[0]
+        : undefined;
+    const trimmedDescription = description.trim();
+    // LangSmith sources are one-per-project: label them "<project>: <goal>" so
+    // the source menu shows both the project and what it is for.
+    const sourceInstanceName =
+      langSmithProject !== undefined
+        ? `${langSmithProject}${
+            trimmedDescription.length > 0 ? `: ${trimmedDescription}` : ""
+          }`.slice(0, 120)
+        : createSourceInstanceName(
+            selectedSource,
+            description,
+            onboardingConfig,
+          );
     const sourceInstance = {
       connectedAt: new Date().toISOString(),
       connectorConfig,
       connectorId: selectedSourceId,
       id: sourceInstanceId,
       ingestionGoal: description.length > 0 ? description : undefined,
-      name: createSourceInstanceName(
-        selectedSource,
-        description,
-        onboardingConfig,
-      ),
+      name: sourceInstanceName,
     };
     const nextConfig = addSourceInstanceConfig(
       onboardingConfig,
@@ -1309,6 +1345,10 @@ export function InitSetup({
       if (source.id === "git-repo") {
         setInput(getDefaultLocalGitRepoPath());
         setStep("source-path");
+        return;
+      } else if (source.id === "langsmith") {
+        setInput("");
+        setStep("source-projects");
         return;
       } else if (source.id === "web-search" || source.id === "hackernews") {
         setSourceState((state) => ({
@@ -1943,6 +1983,25 @@ function Prompt({
           value={input}
         />
         <Text color="gray">Press Enter to save this source.</Text>
+      </Box>
+    );
+  }
+
+  if (step === "source-projects") {
+    return (
+      <Box flexDirection="column">
+        <Text>Which LangSmith project should OpenWiki monitor?</Text>
+        <Text color="gray">
+          Enter one project (tracing session) name. Add another LangSmith source
+          to monitor more projects.
+        </Text>
+        <BorderedInput
+          maxDisplayWidth={inputDisplayWidth}
+          marginTop={1}
+          prefix="project="
+          value={input}
+        />
+        <Text color="gray">Press Enter to continue.</Text>
       </Box>
     );
   }
