@@ -445,6 +445,7 @@ function App({ command }: AppProps) {
           outputMode: runtimeOutputMode,
           threadId: sessionThreadId.current,
           userMessage: activeUserMessage,
+          telemetryFile: command.telemetryFile,
           onEvent: (event) => {
             if (!mountedRef.current || activeRunId.current !== runId) {
               return;
@@ -3798,6 +3799,7 @@ async function runPrintCommand(
       outputMode: runtimeOutputMode,
       threadId: createOpenWikiThreadId(runtimeCwd),
       userMessage: command.userMessage,
+      telemetryFile: command.telemetryFile,
       onEvent: (event) => {
         if (event.type === "text" && event.source !== "subgraph") {
           output.push(event.text);

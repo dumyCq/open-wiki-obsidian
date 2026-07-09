@@ -45,6 +45,7 @@ import {
   shouldCheckUpdateNoop,
   writeLastUpdateMetadata,
 } from "./utils.js";
+import { initTelemetryMode, recordInit } from "../telemetry.js";
 
 export async function runOpenWikiAgent(
   command: OpenWikiCommand,
@@ -208,6 +209,13 @@ async function runOpenWikiAgentCore(
         ? "metadata=skipped command=chat"
         : "metadata=skipped openwiki=unchanged",
     );
+  }
+
+  const telemetryMode = initTelemetryMode(command, outputMode);
+  if (telemetryMode) {
+    await recordInit(telemetryMode, {
+      telemetryFile: options.telemetryFile ?? undefined,
+    });
   }
 
   return {

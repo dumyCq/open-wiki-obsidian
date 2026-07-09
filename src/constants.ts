@@ -38,8 +38,15 @@ export const OPENWIKI_X_CLIENT_ID_ENV_KEY = "OPENWIKI_X_CLIENT_ID";
 export const OPENWIKI_X_CLIENT_SECRET_ENV_KEY = "OPENWIKI_X_CLIENT_SECRET";
 export const OPENWIKI_X_REFRESH_TOKEN_ENV_KEY = "OPENWIKI_X_REFRESH_TOKEN";
 export const OPENWIKI_TAVILY_API_KEY_ENV_KEY = "TAVILY_API_KEY";
+export const OPENWIKI_TELEMETRY_DISABLED_ENV_KEY =
+  "OPENWIKI_TELEMETRY_DISABLED";
+export const OPENWIKI_POSTHOG_KEY_ENV_KEY = "OPENWIKI_POSTHOG_KEY";
+export const OPENWIKI_POSTHOG_HOST_ENV_KEY = "OPENWIKI_POSTHOG_HOST";
 export const DEFAULT_PROVIDER = "openai";
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+
+/** Event name for the one telemetry event OpenWiki emits. */
+export const TELEMETRY_INIT_EVENT = "openwiki_init";
 
 export type OpenWikiProvider =
   | "anthropic"
