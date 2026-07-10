@@ -68,3 +68,34 @@ Real runs can write:
 Scheduled update workflow example:
 
 - `examples/openwiki-update.yml`
+
+## OKF output module
+
+Both `openwiki code` and `openwiki personal` runs emit an Open Knowledge Format
+(OKF v0.1) bundle. Generation has two layers:
+
+- **Prompt (quality):** `src/agent/prompt.ts` tells the model to write page
+  bodies only and organize them by the mode's taxonomy. It never asks the model
+  to emit frontmatter.
+- **Deterministic pass (conformance):** after the agent finishes,
+  `src/agent/index.ts` runs `normalizeOkfBundle` from `src/agent/okf/`. Code owns
+  all frontmatter (`type`, `title`, `description`, `timestamp`), generates the
+  reserved `index.md` (with `okf_version`) and `log.md`, and can validate a
+  bundle. Conformance is a property of the tool, not of model output.
+
+Module layout under `src/agent/okf/`:
+
+- `taxonomy.ts` — per-mode type vocabulary and `inferConceptType`.
+- `frontmatter.ts` — hardened parse/serialize (line-anchored, stable key order).
+- `bundle.ts` — filesystem walk and atomic writes.
+- `reserved.ts` — root `index.md` and `log.md` generation.
+- `normalize.ts` — the orchestrator (`normalizeOkfBundle`, `createConceptBodyHashes`).
+- `validate.ts` — `validateBundle` conformance checks.
+- `index.ts` — public barrel.
+
+The pass is byte-idempotent: a concept's `timestamp` bumps only when its body
+changed (compared against a pre-run body-hash map), and `log.md` is appended only
+when something changed, so a no-op update leaves the bundle unchanged. A golden
+conformance fixture lives at `test/fixtures/okf-bundle/`; `test/okf/` mirrors the
+module and `test/okf/conformance-fixture.test.ts` asserts the fixture validates
+with zero errors (the CI conformance guard).

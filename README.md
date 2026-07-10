@@ -33,6 +33,14 @@ OpenWiki has two modes:
 Choose `openwiki personal --init` for a local personal brain wiki or
 `openwiki code --init` for repository documentation.
 
+Both modes emit [Open Knowledge Format (OKF) v0.1](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
+bundles: every generated page carries YAML frontmatter with a `type`, and
+OpenWiki maintains a root `index.md` (declaring `okf_version`) plus a dated
+`log.md`. This makes the output portable to any OKF consumer with no
+OpenWiki-specific parsing. On the first run over a pre-OKF wiki, OpenWiki performs
+a one-time frontmatter migration (every existing page gains frontmatter);
+subsequent runs stay surgical.
+
 Then to ensure your documentation stays up-to-date, add the CI workflow for your Git provider to automatically open a PR or merge request with documentation updates:
 
 - GitHub Actions: copy [openwiki-update.yml](./examples/openwiki-update.yml) into `.github/workflows/openwiki-update.yml`.
