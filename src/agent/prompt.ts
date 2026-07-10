@@ -4,6 +4,7 @@ import {
   RunContext,
   UpdateMetadata,
 } from "./types.js";
+import { describeDocTypesForPrompt } from "./okf/taxonomy.js";
 
 function formatLastUpdate(lastUpdate: UpdateMetadata | null): string {
   if (lastUpdate === null) {
@@ -11,6 +12,23 @@ function formatLastUpdate(lastUpdate: UpdateMetadata | null): string {
   }
 
   return JSON.stringify(lastUpdate, null, 2);
+}
+
+/**
+ * The OKF output contract appended to the system prompt for every documentation
+ * run. Subtractive: the model writes body only and OpenWiki stamps all
+ * frontmatter deterministically afterward. The directory list is rendered from
+ * the mode's taxonomy so it stays a single source of truth.
+ */
+function buildOkfOutputContract(outputMode: OpenWikiOutputMode): string {
+  return `OKF output contract (this run emits an Open Knowledge Format bundle):
+- Write the markdown BODY ONLY. Do NOT emit a YAML frontmatter block (no leading --- fence). OpenWiki stamps all frontmatter (type, title, description, timestamp) deterministically after you finish.
+- Make the first paragraph of each page a single-sentence summary of the page; OpenWiki lifts it into the "description" field.
+- Organize pages into directories so each page's type can be inferred: ${describeDocTypesForPrompt(outputMode)}. Root-level pages (such as quickstart.md) get a type inferred from their filename.
+- Use bundle-absolute cross-links rooted at the wiki, e.g. [architecture](/architecture/overview.md), not bare filenames.
+- Use conventional section headings where they fit, and include a "# Citations" section listing the source files or references a page is grounded in.
+- Do not create, hand-edit, or manage index.md or log.md. OpenWiki generates and owns those reserved files.
+- (Update runs) Edit page bodies only. Never add or edit a --- frontmatter block; OpenWiki reconciles frontmatter after you finish.`;
 }
 
 export function createSystemPrompt(
@@ -154,7 +172,7 @@ Required documentation structure:
 - Include source-file references inline where they help readers verify or continue exploring.
 - Source Map sections are optional. Add one only when it materially improves navigation for that page. Prefer inline source references for short pages.
 - Track the last successful documentation update in ${output.metadataPath}.
-
+${output.okfContract}
 Mode-specific behavior:
 ${createModeInstructions(command, outputMode)}
 `.trim();
@@ -263,6 +281,7 @@ type OutputPromptConfig = {
   initialInventoryInstruction: string;
   localWikiSynthesisInstruction: string;
   metadataPath: string;
+  okfContract: string;
   planPath: string;
   quickstartPath: string;
   removePlanCommand: string;
@@ -347,6 +366,7 @@ function getOutputPromptConfig(
 - Deduplicate across sources using stable topic keys or slugs for recurring entities, projects, questions, and commitments. Update existing theme, open-question, and commitment entries instead of repeating the same detail on multiple source pages. Promote a watchlist item to a theme only when it recurs, has source diversity, or comes from a high-quality source. Mark stale themes or questions when they have not reappeared and no longer look active.
 - Add new open questions only when there is a real unresolved memory/wiki uncertainty that would impair future assistance; do not turn every weak signal or source-document question into a wiki open question.`,
       metadataPath: "/.last-update.json",
+      okfContract: `\n${buildOkfOutputContract("local-wiki")}\n`,
       planPath: "/_plan.md",
       quickstartPath: "/quickstart.md",
       removePlanCommand: "rm -f ./_plan.md",
@@ -378,6 +398,7 @@ function getOutputPromptConfig(
       "First build a repository inventory: existing docs, graph/app entrypoints, package/config files, major domain folders, tests/evals, data/schema files, skill/playbook files, and operational scripts.",
     localWikiSynthesisInstruction: "",
     metadataPath: "/openwiki/.last-update.json",
+    okfContract: `\n${buildOkfOutputContract("repository")}\n`,
     planPath: "/openwiki/_plan.md",
     quickstartPath: "/openwiki/quickstart.md",
     removePlanCommand: "rm -f ./openwiki/_plan.md",
