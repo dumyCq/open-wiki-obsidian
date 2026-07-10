@@ -1,3 +1,5 @@
+import type { OpenWikiOutputMode } from "./agent/types.js";
+
 export const OPEN_WIKI_DIR = "openwiki";
 export const UPDATE_METADATA_PATH = `${OPEN_WIKI_DIR}/.last-update.json`;
 export const BASETEN_API_KEY_ENV_KEY = "BASETEN_API_KEY";
@@ -347,3 +349,104 @@ export function isValidModelId(value: string): boolean {
 }
 
 export const OPENWIKI_VERSION = "0.1.0";
+
+/**
+ * Target version of the Open Knowledge Format (OKF) that OpenWiki bundles
+ * declare in the root `index.md`. Distinct from {@link OPENWIKI_VERSION}, which
+ * is the npm package version.
+ */
+export const OKF_VERSION = "0.1";
+
+/**
+ * Filenames OKF reserves for bundle navigation and history. They must never be
+ * treated as concept documents, and OpenWiki generates them deterministically.
+ */
+export const OKF_RESERVED_FILENAMES = ["index.md", "log.md"] as const;
+
+type OkfTypeTaxonomy = {
+  /** Exact bundle-relative path overrides, e.g. `quickstart.md`. */
+  files: Record<string, string>;
+  /** Top-level directory overrides, e.g. `architecture`. */
+  directories: Record<string, string>;
+  /** Type used for root-level files without a `files` override. */
+  rootFallback: string;
+};
+
+const REPOSITORY_TYPE_TAXONOMY: OkfTypeTaxonomy = {
+  files: { "quickstart.md": "Overview" },
+  directories: {
+    architecture: "Architecture",
+    workflows: "Workflow",
+    domain: "Domain Concept",
+    "data-models": "Data Model",
+    api: "API",
+    integrations: "Integration",
+    operations: "Operation",
+    testing: "Testing",
+  },
+  rootFallback: "Reference",
+};
+
+const LOCAL_WIKI_TYPE_TAXONOMY: OkfTypeTaxonomy = {
+  files: {
+    "quickstart.md": "Overview",
+    "open-questions.md": "Open Questions",
+    "themes.md": "Themes",
+    "commitments.md": "Commitments",
+    "personal-logistics.md": "Personal Logistics",
+  },
+  directories: {
+    sources: "Source",
+    topics: "Topic",
+    projects: "Project",
+    people: "Person",
+    companies: "Company",
+    research: "Research",
+    operations: "Operation",
+  },
+  rootFallback: "Note",
+};
+
+function getOkfTypeTaxonomy(outputMode: OpenWikiOutputMode): OkfTypeTaxonomy {
+  return outputMode === "local-wiki"
+    ? LOCAL_WIKI_TYPE_TAXONOMY
+    : REPOSITORY_TYPE_TAXONOMY;
+}
+
+/**
+ * Infers a deterministic OKF `type` for a concept from its bundle-relative path.
+ * This is a fallback used only when the model did not supply a `type`; it never
+ * overrides a model-authored value.
+ */
+export function inferConceptType(
+  relativePath: string,
+  outputMode: OpenWikiOutputMode,
+): string {
+  const normalized = relativePath.replace(/\\/gu, "/").replace(/^\/+/u, "");
+  const taxonomy = getOkfTypeTaxonomy(outputMode);
+  const fileOverride = taxonomy.files[normalized];
+
+  if (fileOverride) {
+    return fileOverride;
+  }
+
+  const segments = normalized.split("/").filter(Boolean);
+
+  if (segments.length > 1) {
+    const topDirectory = segments[0] ?? "";
+
+    return taxonomy.directories[topDirectory] ?? titleCasePathSegment(topDirectory);
+  }
+
+  return taxonomy.rootFallback;
+}
+
+function titleCasePathSegment(segment: string): string {
+  const title = segment
+    .split(/[-_]/u)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+  return title.length > 0 ? title : "Reference";
+}

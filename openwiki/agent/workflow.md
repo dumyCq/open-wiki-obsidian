@@ -1,23 +1,38 @@
+---
+type: Workflow
+title: Agent workflow
+description: How an OpenWiki init/update/chat run is prompted, executed,
+  normalized into OKF, and persisted.
+resource: /src/agent/index.ts
+tags:
+  - agent
+  - workflow
+  - prompting
+timestamp: 2026-07-10T07:02:04.970Z
+---
+
 # Agent workflow
 
-The documentation agent is implemented in `src/agent/`. It takes a command (`chat`, `init`, or `update`), gathers repository context, builds prompts, runs a DeepAgents session, and records successful update metadata — but only if the documentation content actually changed.
+The documentation agent is implemented in `src/agent/`. It takes a command (`chat`, `init`, or `update`) plus an `OpenWikiOutputMode` (`repository` or `local-wiki`), gathers context, builds prompts, runs a DeepAgents session, normalizes the result into OKF, and records successful update metadata — but only if the wiki content actually changed. See [Architecture overview](../architecture/overview.md) for how the two output modes affect the runtime root and write guard.
 
 ## Main flow
 
 `src/agent/index.ts` follows this sequence for non-chat runs:
 
-1. Load `~/.openwiki/.env` into `process.env`.
-2. Resolve the provider via `resolveConfiguredProvider()` and ensure the provider's API key exists.
-3. Resolve the model ID from CLI input, `OPENWIKI_MODEL_ID`, or the provider's default model.
-4. Create a run context from Git state and prior update metadata.
-5. Snapshot the current `openwiki/` content hash (before the run).
-6. Build the system prompt and user prompt.
-7. Create the provider-specific model client (`ChatAnthropic`, `ChatOpenRouter`, or `ChatOpenAI`).
-8. Create a DeepAgents `LocalShellBackend` rooted at the repository with a SQLite checkpointer.
-9. Stream messages and tool events back to the CLI.
-10. For `init` and `update`, compare the post-run content snapshot to the pre-run snapshot. Write `openwiki/.last-update.json` **only if the content changed**.
+1. Load `~/.openwiki/.env` into `process.env`, then ensure the write-connector skill file exists (`ensureWriteConnectorSkill()`).
+2. For `update` runs without an explicit user message, check `getUpdateNoopStatus()` — if there's no repository/wiki change since the last recorded update, skip the agent run entirely (`skipped: true`).
+3. Resolve the provider via `resolveConfiguredProvider()` and ensure the provider's API key (and base URL, if required) exists. For `openai-chatgpt`, refresh OAuth tokens before building the model.
+4. Resolve the model ID from CLI input, `OPENWIKI_MODEL_ID`, or the provider's default model.
+5. Create a run context from Git state and prior update metadata (`createRunContext`).
+6. Snapshot the current wiki content hash and per-concept body hashes (before the run) — the body hashes let the OKF pass distinguish model-authored changes from no-op re-normalization.
+7. Build the system prompt and user prompt (`createSystemPrompt` / `createUserPrompt` in `src/agent/prompt.ts`), which differ by `command` and `outputMode`.
+8. Create the provider-specific model client (`ChatAnthropic`, `ChatOpenRouter`, or `ChatOpenAI`).
+9. Create an `OpenWikiLocalShellBackend` rooted at `cwd` with a SQLite checkpointer, and attach the `openwiki_*` connector tools (`createOpenWikiConnectorTools()`).
+10. Stream messages and tool events back to the CLI.
+11. Run `normalizeOkfBundle()` (`src/agent/okf.ts`) over the finished bundle — see [OKF format](../domain/okf-format.md).
+12. For `init` and `update`, compare the post-run (post-OKF-pass) content snapshot to the pre-run snapshot. Write the last-update metadata file **only if the content changed**.
 
-Chat runs skip metadata writes entirely.
+Chat runs skip the noop check, the OKF pass, and metadata writes entirely.
 
 ## Provider-specific model creation
 
@@ -26,6 +41,7 @@ Chat runs skip metadata writes entirely.
 - **anthropic**: `new ChatAnthropic(modelId, { apiKey, anthropicApiUrl? })` — uses `@langchain/anthropic` directly. When `ANTHROPIC_BASE_URL` is set, the resolved alternative base URL is passed as `anthropicApiUrl` so requests can be routed to a self-hosted or proxied Anthropic-compatible endpoint instead of the default API.
 - **openrouter**: `new ChatOpenRouter({ apiKey, baseURL, model, siteName: "OpenWiki" })` — uses the selected OpenRouter model directly.
 - **openai**: `new ChatOpenAI({ apiKey, model, useResponsesApi: true })` — uses OpenAI's Responses API for official OpenAI calls.
+- **openai-chatgpt**: routes through OpenAI's Codex backend using ChatGPT-login OAuth tokens instead of a metered API key (`src/agent/openai-chatgpt-oauth.ts`); tokens are refreshed automatically before model creation via `ensureFreshChatGptTokens()`.
 - **baseten / fireworks / openai-compatible**: `new ChatOpenAI({ apiKey, configuration: { baseURL? }, model })` — OpenAI-compatible clients using the provider's base URL when configured. The `openai-compatible` provider has no default endpoint; its base URL is user-supplied via `OPENAI_COMPATIBLE_BASE_URL` and required (`requiresBaseUrl: true`), which lets OpenWiki target any OpenAI-compatible gateway (for example a LiteLLM gateway fronting upstream providers).
 
 Base URLs are resolved through `resolveProviderBaseUrl()` in `src/constants.ts`, which prefers a provider's alternative base URL environment variable (`baseUrlEnvKey`) over the built-in default before falling back to the SDK's own default endpoint. Providers marked `requiresBaseUrl` are validated at startup by `ensureProviderBaseUrl()`.
@@ -34,7 +50,7 @@ Provider retry attempts are resolved through `resolveProviderRetryAttempts()` an
 
 ## Prompting strategy
 
-`src/agent/prompt.ts` encodes the product rules directly into the system prompt. The agent is instructed to:
+`src/agent/prompt.ts` encodes the product rules directly into the system prompt via `getOutputPromptConfig(outputMode)`, which supplies mode-specific strings (paths, plan-file location, OKF type taxonomy instructions, mode-specific inventory/synthesis rules) into a shared template. In repository mode the agent is instructed to:
 
 - inspect the current codebase and write documentation under `openwiki/`,
 - use filesystem discovery tools and git history rather than inventing facts,
@@ -45,12 +61,15 @@ Provider retry attempts are resolved through `resolveProviderRetryAttempts()` an
 - avoid reading secrets or `.env` files,
 - use git history for init and update runs,
 - respect the temporary plan file and update metadata requirements,
+- write OKF frontmatter on every concept page using the repository type taxonomy (see [OKF format](../domain/okf-format.md)),
 - ensure top-level `/AGENTS.md` and/or `/CLAUDE.md` reference the OpenWiki quickstart (inserting or refreshing a standardized section).
+
+In local-wiki mode the same template is filled with personal-wiki-specific rules instead (source inventory, deduplication by topic key, the OKF personal-wiki type taxonomy, and the local-brain conventions below).
 
 The user prompt changes with the command:
 
-- `init` includes the current Git summary and asks for fresh documentation.
-- `update` includes last update metadata and a Git change summary.
+- `init` includes the current Git summary (repository mode) and asks for fresh documentation.
+- `update` includes last update metadata and a Git/source change summary.
 - `chat` just forwards the user message.
 
 ### Local brain open questions

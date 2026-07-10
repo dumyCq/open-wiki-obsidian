@@ -1,3 +1,15 @@
+---
+type: CLI
+title: CLI usage
+description: Commands, modes, and options exposed by the openwiki binary,
+  including connector auth, ingestion, and scheduling subcommands.
+resource: /src/commands.ts
+tags:
+  - cli
+  - usage
+timestamp: 2026-07-10T07:02:04.970Z
+---
+
 # CLI usage
 
 OpenWiki ships as a single `openwiki` binary and is intended to work both as an interactive terminal app and as a one-shot documentation runner.
@@ -8,15 +20,23 @@ From `src/commands.ts` and `README.md`, the supported entry patterns are:
 
 - `openwiki` — open the interactive chat UI.
 - `openwiki "message"` — send a chat message immediately, then stay open.
-- `openwiki personal --init [message]` — generate initial local personal brain wiki documentation.
-- `openwiki code --init [message]` — generate initial repository documentation.
-- `openwiki --update [message]` — refresh existing OpenWiki documentation.
+- `openwiki personal --init [message]` — generate initial local personal brain wiki documentation under `~/.openwiki/wiki`.
+- `openwiki code --init [message]` — generate initial repository documentation under `openwiki/`.
+- `openwiki --update [message]` — refresh existing OpenWiki documentation (defaults to personal mode unless `code`, `personal`, or `--mode` is given).
+- `openwiki code --update [message]` — refresh repository documentation; also creates `openwiki/` if it does not exist yet, which is why CI workflows can skip `--init` entirely.
 - `openwiki -p, --print` — run once and print the final assistant output (non-interactive).
 - `openwiki --modelId <id>` / `--model-id <id>` — choose a model ID for the run.
 - `openwiki --help` / `-h` — print usage, options, and examples.
 - `openwiki --dry-run` — development-only option that avoids invoking the agent.
 
-The parser rejects incompatible combinations such as `--init` and `--update` together, and it requires a message or command when `--print` is used.
+Connector and automation subcommands (parsed the same way, but dispatched separately from chat/init/update):
+
+- `openwiki auth <provider>` — run a local OAuth flow for a connector provider (`slack`, `gmail`, `x`, `notion`) and save tokens to `~/.openwiki/.env`. `openwiki auth configure <provider>` and `openwiki auth tools <provider>` are advanced commands for regenerating connector config or listing live MCP tools. See [Connectors](../integrations/connectors.md) and [Auth and OAuth](../integrations/auth-and-oauth.md).
+- `openwiki ngrok start [https://<domain>]` — start (or reuse) an ngrok HTTPS tunnel and save the Slack OAuth callback URL as `OPENWIKI_HTTPS_OAUTH_REDIRECT_URI`.
+- `openwiki ingest <source|source-instance|all>` — run deterministic connector ingestion plus a source-specific wiki update for one connector, one named source instance (e.g. `web-search-2`), or all configured sources.
+- `openwiki cron list | pause <source|all> | resume <source|all> | delete <source|all>` — inspect or manage installed source schedules (see [Credentials and updates](../operations/credentials-and-updates.md)).
+
+Bare `openwiki --init` is rejected because init requires an explicit mode (`personal` or `code`). The parser also rejects incompatible combinations such as `--init` and `--update` together, and requires a message or command when `--print` is used.
 
 ### Auto-exit for init/update
 

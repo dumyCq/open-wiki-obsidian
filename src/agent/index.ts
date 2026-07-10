@@ -18,6 +18,7 @@ import {
 import { isFileNotFoundError } from "../fs-errors.js";
 import { openWikiLocalWikiDir } from "../openwiki-home.js";
 import { OpenWikiLocalShellBackend } from "./docs-only-backend.js";
+import { createConceptBodyHashes, normalizeOkfBundle } from "./okf.js";
 import {
   CODEX_ORIGINATOR,
   CODEX_RESPONSES_BASE_URL,
@@ -160,6 +161,10 @@ async function runOpenWikiAgentCore(
       ? null
       : await createOpenWikiContentSnapshot(cwd, outputMode);
   emitDebug(options, "openwiki.snapshot=created");
+  const beforeBodyHashes =
+    command === "chat"
+      ? new Map<string, string>()
+      : await createConceptBodyHashes(cwd, outputMode);
   const model = createModel(provider, modelId, providerRetryAttempts);
   emitDebug(options, `model.provider=${provider}`);
   emitDebug(options, "model=initialized");
@@ -222,6 +227,17 @@ async function runOpenWikiAgentCore(
   }
   emitDebug(options, "stream=completed");
   await chmodIfExists(checkpointPath, 0o600);
+
+  if (command !== "chat") {
+    await normalizeOkfBundle({
+      cwd,
+      outputMode,
+      command,
+      beforeBodyHashes,
+      model: modelId,
+    });
+    emitDebug(options, "okf=normalized");
+  }
 
   if (
     command !== "chat" &&

@@ -254,7 +254,7 @@ async function addDirectoryToSnapshot(
   }
 }
 
-function getWikiContentRoot(
+export function getWikiContentRoot(
   cwd: string,
   outputMode: OpenWikiOutputMode,
 ): string {

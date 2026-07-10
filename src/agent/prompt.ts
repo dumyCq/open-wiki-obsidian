@@ -155,6 +155,8 @@ Required documentation structure:
 - Source Map sections are optional. Add one only when it materially improves navigation for that page. Prefer inline source references for short pages.
 - Track the last successful documentation update in ${output.metadataPath}.
 
+${output.okfInstruction}
+
 Mode-specific behavior:
 ${createModeInstructions(command, outputMode)}
 `.trim();
@@ -263,6 +265,7 @@ type OutputPromptConfig = {
   initialInventoryInstruction: string;
   localWikiSynthesisInstruction: string;
   metadataPath: string;
+  okfInstruction: string;
   planPath: string;
   quickstartPath: string;
   removePlanCommand: string;
@@ -347,6 +350,11 @@ function getOutputPromptConfig(
 - Deduplicate across sources using stable topic keys or slugs for recurring entities, projects, questions, and commitments. Update existing theme, open-question, and commitment entries instead of repeating the same detail on multiple source pages. Promote a watchlist item to a theme only when it recurs, has source diversity, or comes from a high-quality source. Mark stale themes or questions when they have not reappeared and no longer look active.
 - Add new open questions only when there is a real unresolved memory/wiki uncertainty that would impair future assistance; do not turn every weak signal or source-document question into a wiki open question.`,
       metadataPath: "/.last-update.json",
+      okfInstruction: `OKF frontmatter (write on every concept page):
+- Every page except index.md and log.md must begin with a YAML frontmatter block delimited by --- lines and must include a non-empty type.
+- Use these personal-wiki types: quickstart.md -> Overview, open-questions.md -> Open Questions, themes.md -> Themes, commitments.md -> Commitments, personal-logistics.md -> Personal Logistics; sources/ -> Source, topics/ -> Topic, projects/ -> Project, people/ -> Person, companies/ -> Company, research/ -> Research, operations/ -> Operation. For other areas, use a short Title Case type.
+- Also include title and a one-sentence description, plus tags (a list) and resource (a link) where useful.
+- Do not create, hand-edit, or manage links in index.md or log.md. OpenWiki generates and owns those reserved files.`,
       planPath: "/_plan.md",
       quickstartPath: "/quickstart.md",
       removePlanCommand: "rm -f ./_plan.md",
@@ -378,6 +386,11 @@ function getOutputPromptConfig(
       "First build a repository inventory: existing docs, graph/app entrypoints, package/config files, major domain folders, tests/evals, data/schema files, skill/playbook files, and operational scripts.",
     localWikiSynthesisInstruction: "",
     metadataPath: "/openwiki/.last-update.json",
+    okfInstruction: `OKF frontmatter (write on every concept page):
+- Every page except index.md and log.md must begin with a YAML frontmatter block delimited by --- lines and must include a non-empty type.
+- Use these repository types: quickstart.md -> Overview; architecture/ -> Architecture, workflows/ -> Workflow, domain/ -> Domain Concept, data-models/ -> Data Model, api/ -> API, integrations/ -> Integration, operations/ -> Operation, testing/ -> Testing. For other sections, use a short Title Case type.
+- Also include title and a one-sentence description, plus tags (a list) and resource (a link to the underlying file or URL) where useful.
+- Do not create, hand-edit, or manage links in index.md or log.md. OpenWiki generates and owns those reserved files.`,
     planPath: "/openwiki/_plan.md",
     quickstartPath: "/openwiki/quickstart.md",
     removePlanCommand: "rm -f ./openwiki/_plan.md",

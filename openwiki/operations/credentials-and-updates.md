@@ -1,3 +1,16 @@
+---
+type: Operation
+title: Credentials and updates
+description: Local credential storage, onboarding profile, schedules, and update
+  metadata that keep OpenWiki runs reproducible.
+resource: /src/env.ts
+tags:
+  - operations
+  - credentials
+  - scheduling
+timestamp: 2026-07-10T07:02:04.970Z
+---
+
 # Credentials and updates
 
 OpenWiki has four operational concerns that matter for both users and maintainers:
@@ -5,7 +18,7 @@ OpenWiki has four operational concerns that matter for both users and maintainer
 1. local credential storage in `~/.openwiki/.env`, and
 2. persisted personal wiki instructions in `~/.openwiki/INSTRUCTIONS.md`,
 3. persisted onboarding/schedule metadata in `~/.openwiki/onboarding.json`,
-4. persisted update metadata in `openwiki/.last-update.json`.
+4. persisted update metadata in `openwiki/.last-update.json` (repository mode).
 
 It also ships with GitHub Actions and GitLab CI workflow examples for scheduled updates.
 
@@ -22,6 +35,7 @@ The file stores provider configuration and API keys:
 - `OPENWIKI_MODEL_ID` — the default model ID
 - `OPENWIKI_PROVIDER_RETRY_ATTEMPTS` — optional positive integer retry count for transient provider request failures; defaults to 3 when unset
 - Provider API keys: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`, `ANTHROPIC_API_KEY`, `BASETEN_API_KEY`, `FIREWORKS_API_KEY`
+- OpenAI ChatGPT-login tokens (`openai-chatgpt` provider, no API key required): `OPENAI_CHATGPT_ACCESS_TOKEN`, `OPENAI_CHATGPT_REFRESH_TOKEN`, `OPENAI_CHATGPT_EXPIRES_AT`, `OPENAI_CHATGPT_ACCOUNT_ID`, `OPENAI_CHATGPT_EMAIL`, `OPENAI_CHATGPT_PLAN` — managed automatically by `src/agent/openai-chatgpt-oauth.ts`; treat the refresh token like a password
 - Base URLs: `ANTHROPIC_BASE_URL` (optional — routes the anthropic provider at an Anthropic-compatible endpoint other than the default API) and `OPENAI_COMPATIBLE_BASE_URL` (required by the openai-compatible provider, which has no default endpoint)
 - Connector API keys: `TAVILY_API_KEY` for Web Search
 - Optional LangSmith settings: `LANGSMITH_API_KEY`, `LANGCHAIN_PROJECT`, `LANGCHAIN_TRACING_V2`
@@ -159,7 +173,7 @@ After successful `init` or `update` runs where the `openwiki/` content changed, 
 - `gitHead`
 - `model`
 
-The content-change check uses `createOpenWikiContentSnapshot()`, which hashes the `openwiki/` directory (excluding `.last-update.json`). If the hash is identical before and after the run, metadata is not written. This prevents scheduled update loops from updating the timestamp when no documentation changed.
+The content-change check uses `createOpenWikiContentSnapshot()`, which hashes the wiki content root (excluding `.last-update.json`). The snapshot is taken **after** the [OKF normalization pass](../domain/okf-format.md) runs, so frontmatter/`index.md`/`log.md` fixups made by that deterministic pass also count as a content change. If the hash is identical before and after the run, metadata is not written. This prevents scheduled update loops from updating the timestamp when no documentation changed.
 
 Update runs use this metadata to build a change summary since the previous successful OpenWiki execution — preferring `gitHead` for a precise commit range, falling back to `updatedAt` for a time-based range.
 
