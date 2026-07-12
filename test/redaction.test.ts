@@ -5,6 +5,7 @@ import {
   sanitizeDiagnosticText,
 } from "../src/diagnostics.ts";
 import { sanitizeOpenRouterResponseBody } from "../src/agent/index.ts";
+import { SECRET_ENV_KEYS } from "../src/env.ts";
 
 describe("sanitizeDiagnosticText", () => {
   const originalOpenAiKey = process.env.OPENAI_API_KEY;
@@ -188,5 +189,44 @@ describe("sanitizeOpenRouterResponseBody", () => {
     const body = JSON.stringify({ error: "rate limited", status: 429 });
 
     expect(sanitizeOpenRouterResponseBody(body)).toBe(body);
+  });
+});
+
+describe("sanitizeDiagnosticText secret registry coverage", () => {
+  test("redacts the value of every managed secret key", () => {
+    for (const key of SECRET_ENV_KEYS) {
+      const original = process.env[key];
+      const sentinel = `SENTINEL_${key}_VALUE`;
+      process.env[key] = sentinel;
+
+      try {
+        const output = sanitizeDiagnosticText(`before ${sentinel} after`);
+        expect(output).not.toContain(sentinel);
+        expect(output).toContain(`[REDACTED:${key}]`);
+      } finally {
+        if (original === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = original;
+        }
+      }
+    }
+  });
+
+  test("leaves a non-secret base URL untouched", () => {
+    const original = process.env.OPENAI_COMPATIBLE_BASE_URL;
+    process.env.OPENAI_COMPATIBLE_BASE_URL = "https://gateway.example/v1";
+
+    try {
+      expect(
+        sanitizeDiagnosticText("connecting to https://gateway.example/v1"),
+      ).toContain("https://gateway.example/v1");
+    } finally {
+      if (original === undefined) {
+        delete process.env.OPENAI_COMPATIBLE_BASE_URL;
+      } else {
+        process.env.OPENAI_COMPATIBLE_BASE_URL = original;
+      }
+    }
   });
 });

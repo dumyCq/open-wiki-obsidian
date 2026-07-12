@@ -123,6 +123,52 @@ const NON_CREDENTIAL_ENV_KEYS = new Set<string>([
 ]);
 
 /**
+ * Managed keys that are NOT secret and are safe to print in the clear:
+ * provider/model settings, base-URL overrides, LangChain tracing config, OAuth
+ * callback config, OAuth display identity (email/plan/expiry), the ChatGPT
+ * account id, and public OAuth client ids. Everything else in
+ * {@link MANAGED_ENV_KEYS} holds a credential.
+ */
+const NON_SECRET_ENV_KEYS = new Set<string>([
+  OPENWIKI_PROVIDER_ENV_KEY,
+  OPENWIKI_MODEL_ID_ENV_KEY,
+  OPENWIKI_PROVIDER_RETRY_ATTEMPTS_ENV_KEY,
+  OPENAI_COMPATIBLE_BASE_URL_ENV_KEY,
+  ANTHROPIC_BASE_URL_ENV_KEY,
+  OPENAI_CHATGPT_EMAIL_ENV_KEY,
+  OPENAI_CHATGPT_PLAN_ENV_KEY,
+  OPENAI_CHATGPT_EXPIRES_AT_ENV_KEY,
+  OPENAI_CHATGPT_ACCOUNT_ID_ENV_KEY,
+  OPENWIKI_NOTION_MCP_CLIENT_ID_ENV_KEY,
+  OPENWIKI_SLACK_CLIENT_ID_ENV_KEY,
+  OPENWIKI_GOOGLE_CLIENT_ID_ENV_KEY,
+  OPENWIKI_X_CLIENT_ID_ENV_KEY,
+  "OPENWIKI_HTTPS_OAUTH_REDIRECT_URI",
+  "OPENWIKI_OAUTH_CALLBACK_PORT",
+  "LANGCHAIN_PROJECT",
+  "LANGCHAIN_TRACING_V2",
+]);
+
+/**
+ * Every managed key that holds a credential. Derived from
+ * {@link MANAGED_ENV_KEYS} so a newly-added key is treated as a secret
+ * automatically: a contributor has to opt a key OUT of secrecy (by listing it
+ * in {@link NON_SECRET_ENV_KEYS}), never in. This is the fail-closed default,
+ * so forgetting to classify a key over-redacts it rather than leaking it.
+ */
+export const SECRET_ENV_KEYS: readonly string[] = MANAGED_ENV_KEYS.filter(
+  (key) => !NON_SECRET_ENV_KEYS.has(key),
+);
+
+/**
+ * True unless the key is explicitly classified as non-secret. Unknown or
+ * unmanaged keys default to secret.
+ */
+export function isSecretEnvKey(key: string): boolean {
+  return !NON_SECRET_ENV_KEYS.has(key);
+}
+
+/**
  * Managed keys surfaced (in display order) in the credential diagnostics panel:
  * the provider/model settings and every credential, but not the LangChain
  * project/tracing settings. Derived from {@link MANAGED_ENV_KEYS} so a new

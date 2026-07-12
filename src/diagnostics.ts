@@ -1,35 +1,20 @@
-import {
-  ANTHROPIC_API_KEY_ENV_KEY,
-  BASETEN_API_KEY_ENV_KEY,
-  FIREWORKS_API_KEY_ENV_KEY,
-  NVIDIA_API_KEY_ENV_KEY,
-  OPENAI_API_KEY_ENV_KEY,
-  OPENAI_COMPATIBLE_API_KEY_ENV_KEY,
-  OPENROUTER_API_KEY_ENV_KEY,
-} from "./constants.js";
+import { SECRET_ENV_KEYS } from "./env.js";
 
 /**
  * Redacts secrets from text before it is shown to the user or written to a log.
  *
  * This is a security boundary: any error message, header value, or provider
  * response body that could contain a credential must pass through here first.
- * It removes (1) the exact values of secrets currently set in the environment
- * and (2) anything matching known key/token shapes (OpenAI/OpenRouter `sk-…`,
- * `Bearer …`, LangSmith `ls…`, and "Incorrect API key provided: …" phrasing).
+ * It removes (1) the exact values of every secret currently set in the
+ * environment, derived from the single secret registry ({@link SECRET_ENV_KEYS})
+ * so a newly-added credential is covered automatically, and (2) anything
+ * matching known key/token shapes (`sk-…`, `Bearer …`, LangSmith `ls…`, and
+ * "Incorrect API key provided: …" phrasing) as a backstop.
  */
 export function sanitizeDiagnosticText(value: string): string {
   let sanitized = value;
 
-  for (const key of [
-    BASETEN_API_KEY_ENV_KEY,
-    FIREWORKS_API_KEY_ENV_KEY,
-    NVIDIA_API_KEY_ENV_KEY,
-    OPENAI_API_KEY_ENV_KEY,
-    OPENAI_COMPATIBLE_API_KEY_ENV_KEY,
-    ANTHROPIC_API_KEY_ENV_KEY,
-    OPENROUTER_API_KEY_ENV_KEY,
-    "LANGSMITH_API_KEY",
-  ]) {
+  for (const key of SECRET_ENV_KEYS) {
     const secret = process.env[key];
 
     if (secret && secret.length > 0) {
