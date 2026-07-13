@@ -1,6 +1,6 @@
 import type { OpenWikiCommand, OpenWikiRunResult } from "../agent/types.js";
 import type { ErrorDiagnostic } from "../cli/error-diagnostics.js";
-import type { InitSetupResult } from "../credentials.js";
+import type { InitSetupResult } from "./credentials/init-setup.js";
 import type { CredentialDiagnostic } from "../env.js";
 import type { OpenWikiIngestionResult } from "../ingestion.js";
 

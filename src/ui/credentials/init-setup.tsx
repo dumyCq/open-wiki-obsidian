@@ -2,42 +2,40 @@ import { spawn } from "node:child_process";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import path from "node:path";
 import { Box, Text, useInput, useStdout } from "ink";
-import { configureAuthProvider } from "./auth/configure.js";
-import { runOAuthAuth } from "./auth/oauth.js";
+import { configureAuthProvider } from "../../auth/configure.js";
+import { runOAuthAuth } from "../../auth/oauth.js";
 import {
   DEFAULT_PROVIDER,
   OPENWIKI_MODEL_ID_ENV_KEY,
   OPENWIKI_PROVIDER_ENV_KEY,
-} from "./constants.js";
+} from "../../constants.js";
 import {
   getDefaultModelId,
   getProviderApiKeyEnvKey,
   getProviderBaseUrlEnvKey,
-  getProviderLabel,
   isValidBaseUrl,
   type OpenWikiProvider,
   providerRequiresBaseUrl,
   providerUsesOAuth,
   resolveConfiguredProvider,
   SELECTABLE_OPENWIKI_PROVIDERS,
-} from "./providers/config.js";
+} from "../../providers/config.js";
 import {
   getModelSelectionIndex,
   getModelSelectionOptions,
   getModelSetupDetail,
-  getProviderArticle,
   getProviderSelectionIndex,
   getProviderSetupDetail,
   getSelectedModelId,
   shouldStartWithCustomModelInput,
-} from "./providers/model-selection.js";
+} from "../../providers/model-selection.js";
 import {
   type ChatGptLoginHandle,
   type CodexTokens,
   codexTokensToEnv,
   loginWithChatGPT,
-} from "./agent/openai-chatgpt-oauth.js";
-import type { OpenWikiRunMode } from "./cli/parse.js";
+} from "../../agent/openai-chatgpt-oauth.js";
+import type { OpenWikiRunMode } from "../../cli/parse.js";
 import {
   credentialStep,
   getCredentialSetupDetail,
@@ -58,25 +56,43 @@ import {
   type PromptStep,
   sanitizeRepoId,
   validateLocalDirectoryPath,
-} from "./config/credentials.js";
+} from "../../config/credentials.js";
 import {
   CRON_FIELD_LABELS,
   getCronFields,
   parseCronFieldPaste,
   sanitizeCronInputChunk,
-} from "./config/cron.js";
-import type { ConnectorId, SourceSetupOption } from "./connectors/types.js";
+} from "../../config/cron.js";
+import {
+  getErrorMessage,
+  getInputDisplayWidth,
+  moveSelectionIndex,
+  sanitizeInputChunk,
+} from "./input-utils.js";
+import {
+  OAuthLoginPrompt,
+  SetupHeader,
+  SetupPanel,
+  SetupStep,
+} from "./components.js";
+import {
+  CODE_REPO_OPTIONS,
+  CRON_MODE_OPTIONS,
+  POWER_MODE_OPTIONS,
+  SOURCE_CONTINUE_OPTIONS,
+} from "./constants.js";
+import type { SourceSetupState } from "./types.js";
+import { Prompt } from "./prompt.js";
+import type { ConnectorId, SourceSetupOption } from "../../connectors/types.js";
 import {
   getSourceDescriptionOptionCount,
-  getSourceDescriptionPrompt,
-  getSourceMenuLabel,
   getSourceOption,
   getStaticSourceConfig,
   getTemplateSourceOptions,
   needsEnvValue,
-} from "./connectors/source-catalog.js";
-import { getConnectorConfigPath } from "./openwiki-home.js";
-import { openWikiEnvPath, saveOpenWikiEnv } from "./env.js";
+} from "../../connectors/source-catalog.js";
+import { getConnectorConfigPath } from "../../openwiki-home.js";
+import { openWikiEnvPath, saveOpenWikiEnv } from "../../env.js";
 import {
   createEmptyOnboardingConfig,
   isOnboardingComplete,
@@ -85,7 +101,7 @@ import {
   saveRepositoryWikiInstructions,
   saveOpenWikiOnboardingConfig,
   type OpenWikiOnboardingConfig,
-} from "./onboarding/store.js";
+} from "../../onboarding/store.js";
 import {
   addSourceInstanceConfig,
   createSourceInstanceId,
@@ -95,23 +111,20 @@ import {
   getConfigModeId,
   getConfigModeName,
   getConnectedSourceCount,
-  getFinalOptionLabel,
   getRunModeName,
   getRunModeSelectionIndex,
-  getSourceInstanceCount,
-  getSourceInstances,
   getTemplateGoal,
   hydrateRunModeConfig,
   isCodeMode,
   ONBOARDING_TEMPLATES,
   RUN_MODE_OPTIONS,
-} from "./onboarding/setup.js";
+} from "../../onboarding/setup.js";
 import {
   getSuggestedCronExpression,
   installOpenWikiPowerSchedule,
   installConnectorSchedule,
   validateCronExpression,
-} from "./schedules.js";
+} from "../../schedules.js";
 
 export type InitSetupResult = {
   mode: OpenWikiRunMode;
@@ -136,14 +149,6 @@ type InitSetupProps = {
   onError: (message: string) => void;
 };
 
-type SourceSetupState = {
-  authUrl?: string;
-  connectorConfig?: Record<string, unknown>;
-  copiedAuthUrlToClipboard?: boolean;
-  savedScheduleWarning?: string;
-  secretValues: Record<string, string>;
-};
-
 type PromptInputKey = {
   backspace?: boolean;
   ctrl?: boolean;
@@ -156,20 +161,6 @@ type PromptInputKey = {
   tab?: boolean;
   upArrow?: boolean;
 };
-
-const CRON_MODE_OPTIONS = [
-  "Use suggested schedule",
-  "Enter custom cron",
-] as const;
-const POWER_MODE_OPTIONS = [
-  "Set up Mac wake/sleep window",
-  "Skip power setup",
-] as const;
-const SOURCE_CONTINUE_OPTIONS = [
-  "Go back to connections",
-  "Continue without all sources",
-] as const;
-const CODE_REPO_OPTIONS = ["Confirm and continue", "Edit path"] as const;
 
 /**
  * Copies text to the terminal's clipboard using the OSC 52 escape sequence.
@@ -1896,971 +1887,6 @@ export function InitSetup({
   );
 }
 
-function Prompt({
-  codeRepoRoot,
-  codeRepoSelectionIndex,
-  cronFieldSelectionIndex,
-  cronModeSelectionIndex,
-  finalSelectionIndex,
-  input,
-  inputDisplayWidth,
-  isCustomModelInput,
-  modelSelectionIndex,
-  onboardingConfig,
-  powerModeSelectionIndex,
-  provider,
-  providerSelectionIndex,
-  runModeSelectionIndex,
-  secretInputIndex,
-  selectedMode,
-  selectedSource,
-  sourceOptions,
-  sourceContinueSelectionIndex,
-  sourceDescriptionSelectionIndex,
-  sourceSelectionIndex,
-  sourceState,
-  step,
-  suggestedCronDescription,
-  suggestedCronExpression,
-  templateSelectionIndex,
-}: {
-  codeRepoRoot: string;
-  codeRepoSelectionIndex: number;
-  cronFieldSelectionIndex: number;
-  cronModeSelectionIndex: number;
-  finalSelectionIndex: number;
-  input: string;
-  inputDisplayWidth: number;
-  isCustomModelInput: boolean;
-  modelSelectionIndex: number;
-  onboardingConfig: OpenWikiOnboardingConfig;
-  powerModeSelectionIndex: number;
-  provider: OpenWikiProvider;
-  providerSelectionIndex: number;
-  runModeSelectionIndex: number;
-  secretInputIndex: number;
-  selectedMode: OpenWikiRunMode;
-  selectedSource: SourceSetupOption;
-  sourceOptions: readonly SourceSetupOption[];
-  sourceContinueSelectionIndex: number;
-  sourceDescriptionSelectionIndex: number;
-  sourceSelectionIndex: number;
-  sourceState: SourceSetupState;
-  step: PromptStep;
-  suggestedCronDescription: string;
-  suggestedCronExpression: string;
-  templateSelectionIndex: number;
-}) {
-  if (step === "run-mode") {
-    const selectedMode =
-      RUN_MODE_OPTIONS[runModeSelectionIndex] ?? RUN_MODE_OPTIONS[0];
-
-    return (
-      <Box flexDirection="column">
-        <Text>Choose what OpenWiki should initialize.</Text>
-        {RUN_MODE_OPTIONS.map((option, index) => (
-          <Text key={option.id}>
-            <SelectionMarker isSelected={index === runModeSelectionIndex} />{" "}
-            {option.name} <Text color="gray">({option.id})</Text>
-          </Text>
-        ))}
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>{selectedMode.name}</Text>
-          <Text color="gray">{selectedMode.description}</Text>
-        </Box>
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "provider") {
-    return (
-      <Box flexDirection="column">
-        <Text>Choose a model provider.</Text>
-        {SELECTABLE_OPENWIKI_PROVIDERS.map((providerOption, index) => (
-          <Text key={providerOption}>
-            <SelectionMarker isSelected={index === providerSelectionIndex} />{" "}
-            {getProviderLabel(providerOption)}
-            <Text color="gray"> ({providerOption})</Text>
-            {providerOption === DEFAULT_PROVIDER ? (
-              <Text color="gray"> default</Text>
-            ) : null}
-          </Text>
-        ))}
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "api-key") {
-    return (
-      <Box flexDirection="column">
-        <Text>Paste your {getProviderLabel(provider)} API key.</Text>
-        <BorderedInput
-          maxDisplayWidth={inputDisplayWidth}
-          marginTop={1}
-          prefix={`${getProviderApiKeyEnvKey(provider)}=`}
-          secret
-          value={input}
-        />
-        <Text color="gray">Press Enter to save it.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "base-url") {
-    return (
-      <Box flexDirection="column">
-        <Text>Enter the {getProviderLabel(provider)} base URL.</Text>
-        <Text>
-          <Text color="gray">$</Text> {getProviderBaseUrlEnvKey(provider)}={" "}
-          <Text color="yellow">{input}</Text>
-        </Text>
-        <Text color="gray">
-          For example an OpenAI-compatible gateway endpoint (such as a LiteLLM
-          gateway). Press Enter to save it.
-        </Text>
-      </Box>
-    );
-  }
-
-  if (step === "model") {
-    if (isCustomModelInput) {
-      return (
-        <Box flexDirection="column">
-          <Text>Paste a custom model ID.</Text>
-          <BorderedInput
-            maxDisplayWidth={inputDisplayWidth}
-            marginTop={1}
-            prefix={`${OPENWIKI_MODEL_ID_ENV_KEY}=`}
-            value={input}
-          />
-          <Text color="gray">Press Enter to save it.</Text>
-        </Box>
-      );
-    }
-
-    return (
-      <Box flexDirection="column">
-        <Text>
-          Choose {getProviderArticle(provider)} {getProviderLabel(provider)}{" "}
-          model.
-        </Text>
-        {getModelSelectionOptions(provider).map((option, index) => {
-          if (option.kind === "custom") {
-            return (
-              <Text key="custom">
-                <SelectionMarker isSelected={index === modelSelectionIndex} />{" "}
-                Custom model ID
-              </Text>
-            );
-          }
-
-          return (
-            <Text key={option.id}>
-              <SelectionMarker isSelected={index === modelSelectionIndex} />{" "}
-              {option.label} <Text color="gray">{option.id}</Text>
-              {option.id === getDefaultModelId(provider) ? (
-                <Text color="gray"> default</Text>
-              ) : null}
-            </Text>
-          );
-        })}
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "langsmith") {
-    return (
-      <Box flexDirection="column">
-        <Text>Optional: paste a LangSmith API key for tracing.</Text>
-        <BorderedInput
-          maxDisplayWidth={inputDisplayWidth}
-          marginTop={1}
-          prefix="LANGSMITH_API_KEY optional="
-          secret
-          value={input}
-        />
-        <Text color="gray">Press Enter with an empty value to skip.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "template") {
-    const selectedTemplate =
-      ONBOARDING_TEMPLATES[templateSelectionIndex] ?? ONBOARDING_TEMPLATES[0];
-
-    return (
-      <Box flexDirection="column">
-        <Text>Choose how OpenWiki should run.</Text>
-        {ONBOARDING_TEMPLATES.map((template, index) => (
-          <Text key={template.id}>
-            <SelectionMarker isSelected={index === templateSelectionIndex} />{" "}
-            {template.name}
-          </Text>
-        ))}
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>{selectedTemplate.name}</Text>
-          <Text color="gray">{selectedTemplate.description}</Text>
-          {selectedTemplate.suggestedSources.length > 0 ? (
-            <Text color="gray">
-              Suggested sources: {selectedTemplate.suggestedSources.join(", ")}
-            </Text>
-          ) : (
-            <Text color="gray">Start from a blank wiki brief.</Text>
-          )}
-        </Box>
-        <Text color="gray">
-          Press Enter, then edit the brief on the next step.
-        </Text>
-      </Box>
-    );
-  }
-
-  if (step === "wiki-goal") {
-    return (
-      <Box flexDirection="column">
-        <Text>Customize what this wiki should understand.</Text>
-        {getConfigModeName(onboardingConfig) ? (
-          <Text color="gray">Mode: {getConfigModeName(onboardingConfig)}</Text>
-        ) : null}
-        <Text color="gray">
-          Edit the brief below. Keep what is useful, delete what is not.
-        </Text>
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>Edit wiki brief</Text>
-          <BorderedMultilineInput
-            maxDisplayWidth={inputDisplayWidth}
-            value={input}
-          />
-        </Box>
-        <Text color="gray">Press Enter to continue.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "code-repo-confirm") {
-    return (
-      <Box flexDirection="column">
-        <Text>Use this repository?</Text>
-        <Box marginTop={1}>
-          <Text color="cyan">{codeRepoRoot}</Text>
-        </Box>
-        <Text color="gray">
-          OpenWiki will run in this directory and write the initial openwiki/
-          folder there.
-        </Text>
-        <Box flexDirection="column" marginTop={1}>
-          {CODE_REPO_OPTIONS.map((option, index) => (
-            <Text key={option}>
-              <SelectionMarker isSelected={index === codeRepoSelectionIndex} />{" "}
-              {option}
-            </Text>
-          ))}
-        </Box>
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "code-repo-path") {
-    return (
-      <Box flexDirection="column">
-        <Text>Choose the repository directory.</Text>
-        <Text color="gray">
-          Enter an existing directory. OpenWiki will write openwiki/ there.
-        </Text>
-        <BorderedInput
-          maxDisplayWidth={inputDisplayWidth}
-          marginTop={1}
-          prefix="path="
-          value={input}
-        />
-        <Text color="gray">Press Enter to confirm this path.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "source-menu") {
-    const configuredCount = getConnectedSourceCount(
-      onboardingConfig,
-      sourceOptions,
-    );
-
-    return (
-      <Box flexDirection="column">
-        <Text>Configure sources for this mode.</Text>
-        {sourceOptions.map((source, index) => {
-          const sourceInstances = getSourceInstances(
-            onboardingConfig,
-            source.id,
-          );
-          return (
-            <Box flexDirection="column" key={source.id}>
-              <Text>
-                <SelectionMarker isSelected={index === sourceSelectionIndex} />{" "}
-                {getSourceMenuLabel(source, sourceInstances.length)}{" "}
-                <SourceConnectionStatus
-                  count={sourceInstances.length}
-                  isConfigured={sourceInstances.length > 0}
-                />
-              </Text>
-              {sourceInstances.map((sourceInstance) => (
-                <Text color="gray" key={sourceInstance.id}>
-                  {"  "}- {sourceInstance.name ?? sourceInstance.id}{" "}
-                  <Text color="gray">({sourceInstance.id})</Text>
-                </Text>
-              ))}
-            </Box>
-          );
-        })}
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="gray">Next</Text>
-          <Text>
-            <SelectionMarker
-              isSelected={sourceSelectionIndex === sourceOptions.length}
-            />{" "}
-            Continue{" "}
-            {configuredCount === 0 ? (
-              <Text color="gray">(no sources configured)</Text>
-            ) : null}
-          </Text>
-        </Box>
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "source-path") {
-    return (
-      <Box flexDirection="column">
-        <Text>Choose the local Git repository directory.</Text>
-        <Text color="gray">
-          Default is the directory where you started OpenWiki. Edit it to use a
-          different checkout.
-        </Text>
-        <BorderedInput
-          maxDisplayWidth={inputDisplayWidth}
-          marginTop={1}
-          prefix="path="
-          value={input}
-        />
-        <Text color="gray">Press Enter to save this source.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "source-secret") {
-    const secretInput = selectedSource.secretInputs[secretInputIndex];
-    return (
-      <Box flexDirection="column">
-        <Text>{selectedSource.displayName} setup</Text>
-        {selectedSource.instructions.map((instruction, index) => (
-          <Text key={instruction}>
-            {index + 1}. {instruction}
-          </Text>
-        ))}
-        {secretInput ? (
-          <Box flexDirection="column" marginTop={1}>
-            <Text bold>Enter credential</Text>
-            <BorderedInput
-              maxDisplayWidth={inputDisplayWidth}
-              prefix={`${secretInput.envKey}${
-                secretInput.optional ? " optional" : ""
-              }=`}
-              secret
-              value={input}
-            />
-            <Text color="gray">
-              {secretInput.optional
-                ? "Press Enter with an empty value to skip."
-                : "Press Enter to save this value."}
-            </Text>
-          </Box>
-        ) : null}
-      </Box>
-    );
-  }
-
-  if (step === "source-auth") {
-    return (
-      <Box flexDirection="column">
-        <Text>{selectedSource.displayName} authorization</Text>
-        {sourceState.authUrl ? (
-          <OAuthAuthorizationLink
-            copiedToClipboard={Boolean(sourceState.copiedAuthUrlToClipboard)}
-            url={sourceState.authUrl}
-          />
-        ) : (
-          <Text color="gray">
-            Press Enter to open the authorization URL and wait for the callback.
-          </Text>
-        )}
-      </Box>
-    );
-  }
-
-  if (step === "source-description") {
-    return (
-      <Box flexDirection="column">
-        <Text>{getSourceDescriptionPrompt(selectedSource)}</Text>
-        <Text color="gray">
-          Choose an example description, or write your own.
-        </Text>
-        {selectedSource.examples.map((example, index) => (
-          <Text key={example}>
-            <SelectionMarker
-              isSelected={index === sourceDescriptionSelectionIndex}
-            />{" "}
-            {example}
-          </Text>
-        ))}
-        <Text>
-          <SelectionMarker
-            isSelected={
-              sourceDescriptionSelectionIndex >= selectedSource.examples.length
-            }
-          />{" "}
-          Custom description
-        </Text>
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "source-description-custom") {
-    return (
-      <Box flexDirection="column">
-        <Text>{getSourceDescriptionPrompt(selectedSource)}</Text>
-        <Text color="gray">
-          Type what OpenWiki should focus on for this source.
-        </Text>
-        <BorderedMultilineInput
-          maxDisplayWidth={inputDisplayWidth}
-          marginTop={1}
-          value={input}
-        />
-        <Text color="gray">Optional. Press Enter to continue.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "global-cron-mode") {
-    return (
-      <Box flexDirection="column">
-        <Text>
-          {isCodeMode(onboardingConfig)
-            ? "When should GitHub Actions refresh this code wiki?"
-            : "When should OpenWiki run all ingestion?"}
-        </Text>
-        <Text color="gray">
-          {isCodeMode(onboardingConfig)
-            ? "OpenWiki will write a scheduled GitHub Actions workflow for this repository."
-            : "All configured sources run sequentially at this time."}
-        </Text>
-        <Text color="gray">Suggested: {suggestedCronDescription}</Text>
-        {CRON_MODE_OPTIONS.map((option, index) => (
-          <Text key={option}>
-            <SelectionMarker isSelected={index === cronModeSelectionIndex} />{" "}
-            {option}
-          </Text>
-        ))}
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "global-cron-custom") {
-    const validation = validateCronExpression(input);
-    return (
-      <Box flexDirection="column">
-        <Text>
-          {isCodeMode(onboardingConfig)
-            ? "Enter one GitHub Actions cron schedule for this code wiki."
-            : "Enter one cron schedule for all ingestion."}
-        </Text>
-        <SegmentedCronInput
-          activeFieldIndex={cronFieldSelectionIndex}
-          expression={input}
-          fallbackExpression={suggestedCronExpression}
-          maxDisplayWidth={inputDisplayWidth}
-        />
-        {input ? (
-          <Text color={validation.valid ? "cyan" : "red"}>
-            {validation.valid ? validation.description : validation.error}
-          </Text>
-        ) : (
-          <Text color="gray">Example: 0 2 * * *</Text>
-        )}
-        <Text color="gray">
-          Type in each field. Use right/left arrows or Tab to move; spaces also
-          move fields.
-        </Text>
-        <Text color="gray">Press Enter to save a valid schedule.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "global-power-mode") {
-    return (
-      <Box flexDirection="column">
-        <Text>Keep your Mac awake for scheduled refreshes?</Text>
-        <Text color="gray">
-          OpenWiki can use macOS pmset to wake 2 minutes before the shared
-          ingestion schedule and sleep 30 minutes after it.
-        </Text>
-        {sourceState.savedScheduleWarning ? (
-          <Text color="yellow">{sourceState.savedScheduleWarning}</Text>
-        ) : null}
-        <Box flexDirection="column" marginTop={1}>
-          {POWER_MODE_OPTIONS.map((option, index) => (
-            <Text key={option}>
-              <SelectionMarker isSelected={index === powerModeSelectionIndex} />{" "}
-              {option}
-            </Text>
-          ))}
-        </Box>
-        <Text color="gray">
-          macOS has one global repeat power schedule. Setting this can replace
-          an existing pmset repeat wake/sleep schedule.
-        </Text>
-      </Box>
-    );
-  }
-
-  if (step === "source-confirm-continue") {
-    const missingSources = sourceOptions.filter(
-      (source) => getSourceInstanceCount(onboardingConfig, source.id) === 0,
-    );
-    return (
-      <Box flexDirection="column">
-        <Text>Some sources for this mode are not configured yet.</Text>
-        {missingSources.map((source) => (
-          <Text color="gray" key={source.id}>
-            - {source.displayName}
-          </Text>
-        ))}
-        <Box flexDirection="column" marginTop={1}>
-          {SOURCE_CONTINUE_OPTIONS.map((option, index) => (
-            <Text key={option}>
-              <SelectionMarker
-                isSelected={index === sourceContinueSelectionIndex}
-              />{" "}
-              {option}
-            </Text>
-          ))}
-        </Box>
-        <Text color="gray">Use up/down arrows, then press Enter.</Text>
-      </Box>
-    );
-  }
-
-  if (step === "final") {
-    return (
-      <Box flexDirection="column">
-        <Text>Setup is complete.</Text>
-        {FINAL_OPTIONS.map((option, index) => {
-          const label = getFinalOptionLabel(option, selectedMode);
-          return (
-            <Text key={option}>
-              <SelectionMarker isSelected={index === finalSelectionIndex} />{" "}
-              {label}
-            </Text>
-          );
-        })}
-        <Text color="gray">
-          {selectedMode === "code"
-            ? "Run now writes the initial openwiki/ directory. Open chat skips the initial run."
-            : "Run now executes one source-specific ingestion and wiki update per configured source. Run later opens chat so you can start ingestion when you are ready."}
-        </Text>
-      </Box>
-    );
-  }
-
-  return null;
-}
-
-function SetupHeader() {
-  return (
-    <Box
-      borderStyle="round"
-      borderColor="cyan"
-      flexDirection="column"
-      marginBottom={1}
-      paddingX={1}
-    >
-      <Text>
-        <Text bold color="cyan">
-          OpenWiki
-        </Text>{" "}
-        <Text color="gray">first-run setup</Text>
-      </Text>
-      <Text>Configure the model, wiki scope, and sources.</Text>
-    </Box>
-  );
-}
-
-function SetupStep({
-  detail,
-  label,
-  state,
-}: {
-  detail: string;
-  label: string;
-  state: "current" | "done" | "optional" | "pending";
-}) {
-  const color =
-    state === "done"
-      ? "green"
-      : state === "current"
-        ? "yellow"
-        : state === "optional"
-          ? "cyan"
-          : "gray";
-
-  return (
-    <Text>
-      <Text color={color}>[{state.toUpperCase()}]</Text>{" "}
-      <Text bold>{label.padEnd(16)}</Text> <Text color="gray">{detail}</Text>
-    </Text>
-  );
-}
-
-function SetupPanel({
-  children,
-  title,
-}: {
-  children: React.ReactNode;
-  title: string;
-}) {
-  return (
-    <Box
-      borderStyle="single"
-      borderColor="gray"
-      flexDirection="column"
-      marginTop={1}
-      paddingX={1}
-    >
-      <Text bold color="cyan">
-        {title}
-      </Text>
-      {children}
-    </Box>
-  );
-}
-
-function SelectionMarker({ isSelected }: { isSelected: boolean }) {
-  return (
-    <Text color={isSelected ? "cyan" : "gray"}>{isSelected ? ">" : " "}</Text>
-  );
-}
-
-function SourceConnectionStatus({
-  count,
-  isConfigured,
-}: {
-  count: number;
-  isConfigured: boolean;
-}) {
-  return (
-    <Text color={isConfigured ? "green" : "gray"}>
-      {isConfigured
-        ? `[configured${count > 1 ? ` x${count}` : ""}]`
-        : "[not configured]"}
-    </Text>
-  );
-}
-
-function OAuthAuthorizationLink({
-  copiedToClipboard,
-  url,
-}: {
-  copiedToClipboard: boolean;
-  url: string;
-}) {
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text>
-        <Text color="cyan" underline>
-          {formatTerminalHyperlink(url, "Open authorization URL")}
-        </Text>
-      </Text>
-      <Text color={copiedToClipboard ? "green" : "gray"}>
-        {copiedToClipboard
-          ? "Full URL copied to clipboard. It is also shown below."
-          : "Copy the full raw URL below if the link is not clickable."}
-      </Text>
-      <Text color="gray" wrap="wrap">
-        {url}
-      </Text>
-    </Box>
-  );
-}
-
-function OAuthLoginPrompt({
-  copied,
-  input,
-  isLoggingIn,
-  loginUrl,
-  provider,
-}: {
-  copied: boolean;
-  input: string;
-  isLoggingIn: boolean;
-  loginUrl: string | null;
-  provider: OpenWikiProvider;
-}) {
-  return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold color="cyan">
-        ChatGPT login
-      </Text>
-      <Text>
-        Sign in with your {getProviderLabel(provider)} account to authorize
-        OpenWiki.
-      </Text>
-      {loginUrl ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text color="gray">
-            Opening your browser. If it does not open, copy this URL:
-          </Text>
-          <Text color="cyan" wrap="wrap">
-            {loginUrl}
-          </Text>
-          <Text color="gray">
-            Press <Text bold>c</Text> to copy the URL
-            {copied ? <Text color="green"> (copied)</Text> : null}
-          </Text>
-          <Box flexDirection="column" marginTop={1}>
-            <Text color="gray">
-              If the browser cannot reach this machine, paste the redirect URL
-              or authorization code and press Enter:
-            </Text>
-            <Text>
-              <Text color="gray">&gt; </Text>
-              {input.length > 0 ? (
-                <Text color="yellow">{input}</Text>
-              ) : (
-                <Text color="gray">(paste here)</Text>
-              )}
-            </Text>
-          </Box>
-        </Box>
-      ) : (
-        <Text color="gray">Starting the ChatGPT login...</Text>
-      )}
-      <Text color="gray">
-        {isLoggingIn
-          ? "Waiting for browser sign-in or pasted URL..."
-          : "Login failed. Press Enter to retry."}
-      </Text>
-    </Box>
-  );
-}
-
-function BorderedInput({
-  borderColor = "cyan",
-  maxDisplayWidth,
-  marginTop,
-  prefix,
-  secret = false,
-  showCursor = true,
-  value,
-}: {
-  borderColor?: "cyan" | "gray";
-  maxDisplayWidth: number;
-  marginTop?: number;
-  prefix?: string;
-  secret?: boolean;
-  showCursor?: boolean;
-  value: string;
-}) {
-  const prompt = prefix ? "$ " : "> ";
-  const prefixText = prefix ? `${prefix} ` : "";
-  const valueDisplayWidth = Math.max(
-    1,
-    maxDisplayWidth - prompt.length - prefixText.length - (showCursor ? 1 : 0),
-  );
-
-  return (
-    <Box
-      borderStyle="single"
-      borderColor={borderColor}
-      marginTop={marginTop}
-      paddingX={1}
-      width={maxDisplayWidth + 4}
-    >
-      <Text wrap="truncate">
-        <Text color="gray">{prompt}</Text>
-        {prefixText ? <Text color="gray">{prefixText}</Text> : null}
-        <InputValueWithCursor
-          maxDisplayWidth={valueDisplayWidth}
-          secret={secret}
-          showCursor={showCursor}
-          value={value}
-        />
-      </Text>
-    </Box>
-  );
-}
-
-function BorderedMultilineInput({
-  borderColor = "cyan",
-  maxDisplayWidth,
-  marginTop,
-  showCursor = true,
-  value,
-}: {
-  borderColor?: "cyan" | "gray";
-  maxDisplayWidth: number;
-  marginTop?: number;
-  showCursor?: boolean;
-  value: string;
-}) {
-  return (
-    <Box
-      borderStyle="single"
-      borderColor={borderColor}
-      flexDirection="column"
-      marginTop={marginTop}
-      paddingX={1}
-      width={maxDisplayWidth + 4}
-    >
-      <Text wrap="wrap">
-        <Text color="gray">&gt; </Text>
-        {value ? <Text color="yellow">{value}</Text> : null}
-        {showCursor ? <Text inverse> </Text> : null}
-      </Text>
-    </Box>
-  );
-}
-
-function InputValueWithCursor({
-  maxDisplayWidth,
-  secret = false,
-  showCursor = true,
-  value,
-}: {
-  maxDisplayWidth: number;
-  secret?: boolean;
-  showCursor?: boolean;
-  value: string;
-}) {
-  if (secret) {
-    const displayValue = getSingleLineInputDisplayValue(
-      formatSecretInputDisplay(value),
-      maxDisplayWidth,
-    );
-
-    return (
-      <>
-        <Text color={value.length > 0 ? "yellow" : "gray"}>{displayValue}</Text>
-        {showCursor ? <Text inverse> </Text> : null}
-      </>
-    );
-  }
-
-  const displayValue = getSingleLineInputDisplayValue(value, maxDisplayWidth);
-
-  return (
-    <>
-      {displayValue ? <Text color="yellow">{displayValue}</Text> : null}
-      {showCursor ? <Text inverse> </Text> : null}
-    </>
-  );
-}
-
-function formatSecretInputDisplay(value: string): string {
-  return value.length === 0 ? "empty" : `hidden (${value.length} chars)`;
-}
-
-function formatTerminalHyperlink(url: string, label: string): string {
-  return `\u001B]8;;${url}\u0007${label}\u001B]8;;\u0007`;
-}
-
-function getSingleLineInputDisplayValue(
-  value: string,
-  maxLength: number,
-): string {
-  if (maxLength <= 0) {
-    return "";
-  }
-
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  if (maxLength <= 3) {
-    return value.slice(-maxLength);
-  }
-
-  return `...${value.slice(-(maxLength - 3))}`;
-}
-
-function SegmentedCronInput({
-  activeFieldIndex,
-  expression,
-  fallbackExpression,
-  maxDisplayWidth,
-}: {
-  activeFieldIndex: number;
-  expression: string;
-  fallbackExpression: string;
-  maxDisplayWidth: number;
-}) {
-  const fields = getCronFields(expression, fallbackExpression);
-  const fieldDisplayWidth = Math.max(
-    8,
-    Math.min(14, Math.floor(maxDisplayWidth / CRON_FIELD_LABELS.length) - 1),
-  );
-
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        {fields.map((field, index) => (
-          <Box
-            flexDirection="column"
-            marginRight={1}
-            key={CRON_FIELD_LABELS[index]}
-          >
-            <Text color="gray">{CRON_FIELD_LABELS[index]}</Text>
-            <BorderedInput
-              borderColor={index === activeFieldIndex ? "cyan" : "gray"}
-              maxDisplayWidth={fieldDisplayWidth}
-              showCursor={index === activeFieldIndex}
-              value={field}
-            />
-          </Box>
-        ))}
-      </Box>
-      <Text color="gray">Cron: {fields.join(" ")}</Text>
-    </Box>
-  );
-}
-
-function moveSelectionIndex(
-  currentIndex: number,
-  offset: number,
-  itemCount: number,
-): number {
-  if (itemCount <= 0) {
-    return 0;
-  }
-
-  return (currentIndex + offset + itemCount) % itemCount;
-}
-
-function getInputDisplayWidth(stdoutColumns: number | undefined): number {
-  const defaultWidth = 64;
-
-  if (!stdoutColumns || stdoutColumns <= 0) {
-    return defaultWidth;
-  }
-
-  return Math.max(24, Math.min(96, stdoutColumns - 16));
-}
-
 function handleCronEditorInput({
   currentFieldIndex,
   currentValue,
@@ -2945,12 +1971,4 @@ function handleCronEditorInput({
   setValue(fields.join(" "));
   setReplaceCurrentField(false);
   return true;
-}
-
-function sanitizeInputChunk(value: string): string {
-  return value.replace(/[\r\n]/gu, "");
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
