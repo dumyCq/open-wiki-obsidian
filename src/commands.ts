@@ -1,4 +1,4 @@
-import { isValidModelId, normalizeModelId } from "./constants.js";
+import { isValidModelId, normalizeModelId } from "./providers/config.js";
 import type { OpenWikiCommand } from "./agent/types.js";
 import { isAuthProviderId } from "./auth/providers.js";
 import type { AuthProviderId } from "./auth/types.js";

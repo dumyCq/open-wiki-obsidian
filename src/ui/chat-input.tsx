@@ -11,7 +11,7 @@ import {
   normalizeProvider,
   SELECTABLE_OPENWIKI_PROVIDERS,
   type OpenWikiProvider,
-} from "../constants.js";
+} from "../providers/config.js";
 import { saveOpenWikiEnv } from "../env.js";
 import { formatCwd } from "./format.js";
 

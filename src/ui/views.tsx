@@ -1,7 +1,10 @@
 import { Box, Text } from "ink";
 import type { ErrorDiagnostic } from "../cli/error-diagnostics.js";
 import { helpContent, isDevelopmentMode } from "../commands.js";
-import { getDefaultModelId, resolveConfiguredProvider } from "../constants.js";
+import {
+  getDefaultModelId,
+  resolveConfiguredProvider,
+} from "../providers/config.js";
 import type { OpenWikiCommand } from "../agent/types.js";
 import type { CredentialDiagnostic } from "../env.js";
 import type { OpenWikiIngestionResult } from "../ingestion.js";

@@ -35,20 +35,22 @@ import type {
 } from "./types.js";
 import {
   ANTHROPIC_BASE_URL_ENV_KEY,
-  getProviderApiKeyEnvKey,
-  getProviderBaseUrlEnvKey,
-  getProviderLabel,
   OPENAI_COMPATIBLE_BASE_URL_ENV_KEY,
   OPENROUTER_BASE_URL,
   OPENWIKI_MODEL_ID_ENV_KEY,
   OPENWIKI_PROVIDER_ENV_KEY,
   OPENWIKI_PROVIDER_RETRY_ATTEMPTS_ENV_KEY,
+} from "../constants.js";
+import {
+  getProviderApiKeyEnvKey,
+  getProviderBaseUrlEnvKey,
+  getProviderLabel,
   providerRequiresBaseUrl,
   resolveConfiguredProvider,
   resolveProviderBaseUrl,
   resolveProviderRetryAttempts,
   type OpenWikiProvider,
-} from "../constants.js";
+} from "../providers/config.js";
 import {
   createOpenWikiContentSnapshot,
   getUpdateNoopStatus,

@@ -8,15 +8,6 @@ import { configureAuthProvider } from "./auth/configure.js";
 import { runOAuthAuth } from "./auth/oauth.js";
 import {
   DEFAULT_PROVIDER,
-  getDefaultModelId,
-  getProviderApiKeyEnvKey,
-  getProviderBaseUrlEnvKey,
-  getProviderLabel,
-  getProviderModelOptions,
-  isValidBaseUrl,
-  isValidModelId,
-  normalizeProvider,
-  normalizeModelId,
   OPENAI_CHATGPT_EMAIL_ENV_KEY,
   OPENAI_CHATGPT_PLAN_ENV_KEY,
   OPENWIKI_GOOGLE_CLIENT_ID_ENV_KEY,
@@ -25,12 +16,23 @@ import {
   OPENWIKI_PROVIDER_ENV_KEY,
   OPENWIKI_TAVILY_API_KEY_ENV_KEY,
   OPENWIKI_X_CLIENT_ID_ENV_KEY,
+} from "./constants.js";
+import {
+  getDefaultModelId,
+  getProviderApiKeyEnvKey,
+  getProviderBaseUrlEnvKey,
+  getProviderLabel,
+  getProviderModelOptions,
+  isValidBaseUrl,
+  isValidModelId,
+  normalizeModelId,
+  normalizeProvider,
   type OpenWikiProvider,
   providerRequiresBaseUrl,
   providerUsesOAuth,
   resolveConfiguredProvider,
   SELECTABLE_OPENWIKI_PROVIDERS,
-} from "./constants.js";
+} from "./providers/config.js";
 import {
   type ChatGptLoginHandle,
   type CodexTokens,

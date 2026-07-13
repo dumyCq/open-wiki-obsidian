@@ -9,16 +9,18 @@ import {
 } from "../agent/openai-chatgpt-oauth.js";
 import type { OpenWikiRunOptions } from "../agent/types.js";
 import {
+  OPENROUTER_API_KEY_ENV_KEY,
+  OPENROUTER_BASE_URL,
+  OPENWIKI_MODEL_ID_ENV_KEY,
+} from "../constants.js";
+import {
   getDefaultModelId,
   getProviderApiKeyEnvKey,
   isValidModelId,
   normalizeModelId,
-  OPENROUTER_API_KEY_ENV_KEY,
-  OPENROUTER_BASE_URL,
-  OPENWIKI_MODEL_ID_ENV_KEY,
   resolveProviderBaseUrl,
   type OpenWikiProvider,
-} from "../constants.js";
+} from "./config.js";
 
 /**
  * Resolves the model id for a run, in precedence order: an explicit run option,

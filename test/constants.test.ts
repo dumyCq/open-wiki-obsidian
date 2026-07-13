@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
-  DEFAULT_MODEL_ID,
-  DEFAULT_PROVIDER_RETRY_ATTEMPTS,
   DEFAULT_PROVIDER,
+  DEFAULT_PROVIDER_RETRY_ATTEMPTS,
+} from "../src/constants.ts";
+import {
+  DEFAULT_MODEL_ID,
   getDefaultModelId,
   getProviderModelOptions,
   isValidBaseUrl,
@@ -13,7 +15,7 @@ import {
   resolveConfiguredProvider,
   resolveProviderBaseUrl,
   resolveProviderRetryAttempts,
-} from "../src/constants.ts";
+} from "../src/providers/config.ts";
 
 describe("isValidModelId", () => {
   test("accepts normal provider/model ids", () => {

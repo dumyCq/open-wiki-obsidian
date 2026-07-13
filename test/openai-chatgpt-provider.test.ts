@@ -1,17 +1,19 @@
 import { describe, expect, test } from "vitest";
 import {
+  OPENAI_CHATGPT_ACCESS_TOKEN_ENV_KEY,
+  OPENAI_CHATGPT_ACCOUNT_ID_ENV_KEY,
+  OPENAI_CHATGPT_EXPIRES_AT_ENV_KEY,
+  OPENAI_CHATGPT_REFRESH_TOKEN_ENV_KEY,
+} from "../src/constants.ts";
+import {
   getProviderApiKeyEnvKey,
   getProviderAuthMethod,
   getProviderLabel,
   getProviderModelOptions,
   isValidProvider,
-  OPENAI_CHATGPT_ACCESS_TOKEN_ENV_KEY,
-  OPENAI_CHATGPT_ACCOUNT_ID_ENV_KEY,
-  OPENAI_CHATGPT_EXPIRES_AT_ENV_KEY,
-  OPENAI_CHATGPT_REFRESH_TOKEN_ENV_KEY,
   providerUsesOAuth,
   SELECTABLE_OPENWIKI_PROVIDERS,
-} from "../src/constants.ts";
+} from "../src/providers/config.ts";
 
 describe("openai-chatgpt provider config", () => {
   test("is a valid, selectable provider", () => {

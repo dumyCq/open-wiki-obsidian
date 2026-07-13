@@ -3,7 +3,7 @@ import type { CliCommand } from "./commands.js";
 import {
   getProviderApiKeyEnvKey,
   resolveConfiguredProvider,
-} from "./constants.js";
+} from "./providers/config.js";
 
 type ResolveStartupCommandOptions = {
   cwd?: string;

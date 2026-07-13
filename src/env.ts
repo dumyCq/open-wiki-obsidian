@@ -6,8 +6,6 @@ import {
   ANTHROPIC_BASE_URL_ENV_KEY,
   BASETEN_API_KEY_ENV_KEY,
   FIREWORKS_API_KEY_ENV_KEY,
-  isValidModelId,
-  normalizeProvider,
   NVIDIA_API_KEY_ENV_KEY,
   OPENAI_API_KEY_ENV_KEY,
   OPENAI_CHATGPT_ACCESS_TOKEN_ENV_KEY,
@@ -41,8 +39,12 @@ import {
   OPENWIKI_MODEL_ID_ENV_KEY,
   OPENWIKI_PROVIDER_ENV_KEY,
   OPENWIKI_PROVIDER_RETRY_ATTEMPTS_ENV_KEY,
-  resolveProviderRetryAttempts,
 } from "./constants.js";
+import {
+  isValidModelId,
+  normalizeProvider,
+  resolveProviderRetryAttempts,
+} from "./providers/config.js";
 import { isFileNotFoundError } from "./fs-errors.js";
 
 export const openWikiEnvDir = path.join(os.homedir(), ".openwiki");

@@ -1,12 +1,11 @@
 import { Box, Text } from "ink";
 import { formatChatGptAccountFromEnv } from "../agent/openai-chatgpt-oauth.js";
+import { OPENWIKI_MODEL_ID_ENV_KEY, OPENWIKI_VERSION } from "../constants.js";
 import {
   getDefaultModelId,
   getProviderLabel,
-  OPENWIKI_MODEL_ID_ENV_KEY,
-  OPENWIKI_VERSION,
   resolveConfiguredProvider,
-} from "../constants.js";
+} from "../providers/config.js";
 import { formatCwd } from "./format.js";
 
 const OPENWIKI_LOGO_LINES = [

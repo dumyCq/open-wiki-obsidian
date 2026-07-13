@@ -11,14 +11,16 @@ import {
 } from "../cli/run-mode.js";
 import { type CliCommand, type OpenWikiRunMode } from "../commands.js";
 import {
+  OPENWIKI_MODEL_ID_ENV_KEY,
+  OPENWIKI_PROVIDER_ENV_KEY,
+} from "../constants.js";
+import {
   getDefaultModelId,
   getProviderApiKeyEnvKey,
   getProviderLabel,
-  OPENWIKI_MODEL_ID_ENV_KEY,
-  OPENWIKI_PROVIDER_ENV_KEY,
   resolveConfiguredProvider,
   type OpenWikiProvider,
-} from "../constants.js";
+} from "../providers/config.js";
 import { InitSetup, needsCredentialSetup } from "../credentials.js";
 import { getErrorMessage } from "../diagnostics.js";
 import {
