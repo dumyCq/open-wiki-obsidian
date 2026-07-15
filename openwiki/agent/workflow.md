@@ -1,3 +1,9 @@
+---
+type: Technical documentation
+title: Agent workflow
+description: How the documentation agent gathers repository context, runs sessions, and records update metadata.
+---
+
 # Agent workflow
 
 The documentation agent is implemented in `src/agent/`. It takes a command (`chat`, `init`, or `update`), gathers repository context, builds prompts, runs a DeepAgents session, and records successful update metadata — but only if the documentation content actually changed.

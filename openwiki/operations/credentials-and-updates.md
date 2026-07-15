@@ -1,3 +1,9 @@
+---
+type: Operations Guide
+title: Credentials and updates
+description: Describes OpenWiki credential storage, onboarding settings, scheduled automation, and update metadata.
+---
+
 # Credentials and updates
 
 OpenWiki has four operational concerns that matter for both users and maintainers:

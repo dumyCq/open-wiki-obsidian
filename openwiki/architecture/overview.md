@@ -1,3 +1,9 @@
+---
+type: Architecture Overview
+title: Architecture overview
+description: An overview of OpenWiki's layered runtime architecture, provider resolution, backend behavior, and extension points.
+---
+
 # Architecture overview
 
 OpenWiki has a small but layered architecture:

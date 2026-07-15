@@ -1,3 +1,9 @@
+---
+type: CLI Reference
+title: CLI usage
+description: Reference for OpenWiki command-line commands, interactive behavior, provider configuration, and operational workflows.
+---
+
 # CLI usage
 
 OpenWiki ships as a single `openwiki` binary and is intended to work both as an interactive terminal app and as a one-shot documentation runner.
