@@ -146,11 +146,12 @@ export async function runOpenWikiAgent(
   // invalid model, missing base URL) is still recorded. They may be undefined
   // in the catch if resolution threw before assigning them.
   let provider: OpenWikiProvider | undefined;
+  let providerBaseUrl: string | undefined;
   let modelId: string | undefined;
 
   try {
     provider = resolveConfiguredProvider();
-    const providerBaseUrl = resolveProviderBaseUrl(provider);
+    providerBaseUrl = resolveProviderBaseUrl(provider);
     emitDebug(options, `provider=${provider}`);
     if (providerBaseUrl) {
       emitDebug(options, `provider.baseUrl=${JSON.stringify(providerBaseUrl)}`);
@@ -184,6 +185,7 @@ export async function runOpenWikiAgent(
     await recordRunSafe(command, options, {
       provider,
       outcome: "success",
+      openAiCompatibleBaseUrl: providerBaseUrl,
     });
 
     return result;
@@ -194,6 +196,7 @@ export async function runOpenWikiAgent(
       provider,
       outcome: "failure",
       errorClass: classifyError(error),
+      openAiCompatibleBaseUrl: providerBaseUrl,
     });
 
     throw error;
