@@ -171,7 +171,7 @@ function isWikiMarkdownPath(
   return (
     path.posix.extname(normalized).toLowerCase() === ".md" &&
     !OKF_RESERVED_FILES.has(path.posix.basename(normalized).toLowerCase()) &&
-    (outputMode === "local-wiki" || normalized.startsWith("/openwiki/"))
+    (outputMode !== "repository" || normalized.startsWith("/openwiki/"))
   );
 }
 

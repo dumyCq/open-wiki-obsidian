@@ -207,4 +207,19 @@ describe("addFrontmatterWarning", () => {
 
     expect(message.content).toContain("[missing_type]");
   });
+
+  test("validates root-level wiki paths in obsidian-vault mode", async () => {
+    const message = mutationMessage("/page.md");
+    await addFrontmatterWarning(
+      message,
+      backendWith("# Missing front matter"),
+      "obsidian-vault",
+      "write_file",
+    );
+
+    expect(message.content).toContain(
+      "YAML front matter was NOT formatted properly",
+    );
+    expect(message.content).toContain("[missing_opening_delimiter] line 1");
+  });
 });

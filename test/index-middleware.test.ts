@@ -9,7 +9,9 @@ function document(title: string, description: string): string {
   return `---\ntype: Reference\ntitle: ${JSON.stringify(title)}\ndescription: ${JSON.stringify(description)}\n---\n\n# ${title}\n`;
 }
 
-async function setup(outputMode: "local-wiki" | "repository" = "repository") {
+async function setup(
+  outputMode: "local-wiki" | "obsidian-vault" | "repository" = "repository",
+) {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "openwiki-index-"));
   const backend = new OpenWikiLocalShellBackend({
     docsOnly: true,
@@ -183,19 +185,23 @@ describe("synchronizeWikiIndexes", () => {
     expect(index).toContain("- [Folded](folded.md) - A folded description.");
   });
 
-  test("rejects malformed and duplicate YAML", async () => {
+  test("falls back to the basename for malformed or duplicate YAML instead of crashing", async () => {
     for (const frontmatter of [
       "type: [unterminated\ndescription: Page",
       "type: Reference\ndescription: First\ndescription: Second",
     ]) {
-      const { backend } = await setup();
+      const { backend, rootDir } = await setup();
       await backend.write("/openwiki/page.md", `---\n${frontmatter}\n---\n`);
 
       await expect(
         synchronizeWikiIndexes(backend, "repository"),
-      ).rejects.toThrow(
-        "/openwiki/page.md contains invalid YAML front matter:",
+      ).resolves.toBeUndefined();
+
+      const index = await readFile(
+        path.join(rootDir, "openwiki/index.md"),
+        "utf8",
       );
+      expect(index).toContain("- [page](page.md)\n");
     }
   });
 
@@ -239,5 +245,29 @@ describe("synchronizeWikiIndexes", () => {
     await expect(
       readFile(path.join(rootDir, "empty/index.md"), "utf8"),
     ).resolves.toBe("# Files\n");
+  });
+
+  test("indexes files without frontmatter using the basename in obsidian-vault mode", async () => {
+    const { backend, rootDir } = await setup("obsidian-vault");
+    await backend.write("/human-note.md", "just a note, no frontmatter");
+    await backend.write(
+      "/documented.md",
+      "---\ntype: Note\ntitle: Documented\n---\nbody",
+    );
+
+    await synchronizeWikiIndexes(backend, "obsidian-vault");
+
+    const index = await readFile(path.join(rootDir, "index.md"), "utf8");
+    expect(index).toContain("[human-note](human-note.md)");
+    expect(index).toContain("[Documented](documented.md)");
+  });
+
+  test("invalid YAML frontmatter no longer crashes index sync", async () => {
+    const { backend } = await setup("obsidian-vault");
+    await backend.write("/broken.md", "---\n: [unclosed\n---\nbody");
+
+    await expect(
+      synchronizeWikiIndexes(backend, "obsidian-vault"),
+    ).resolves.toBeUndefined();
   });
 });

@@ -49,7 +49,7 @@ export async function synchronizeWikiIndexes(
   backend: BackendProtocolV2,
   outputMode: OpenWikiOutputMode,
 ): Promise<void> {
-  const root = outputMode === "local-wiki" ? "/" : "/openwiki";
+  const root = outputMode === "repository" ? "/openwiki" : "/";
   for (const directory of await collectDirectories(backend, root, true)) {
     await synchronizeDirectory(backend, directory, root);
   }
@@ -107,10 +107,7 @@ async function synchronizeDirectory(
     }
 
     const filePath = path.posix.join(directory.path, name);
-    const metadata = parseFrontmatter(
-      await readText(backend, filePath),
-      filePath,
-    );
+    const metadata = parseFrontmatter(await readText(backend, filePath));
     files.push({
       description: metadata.description,
       href: encodeURIComponent(name),
@@ -168,13 +165,17 @@ function renderLinks(
   return `# ${heading}\n\n${items.join("\n")}`;
 }
 
-/** Parses usable optional display metadata from YAML front matter. */
-function parseFrontmatter(
-  content: string,
-  filePath: string,
-): { description?: string; title?: string } {
+/**
+ * Parses usable optional display metadata from YAML front matter. Tolerant by
+ * design: human-authored notes (e.g. created in Obsidian) may have no front
+ * matter at all, and index generation must still succeed with basename labels.
+ */
+function parseFrontmatter(content: string): {
+  description?: string;
+  title?: string;
+} {
   const block = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(content)?.[1];
-  if (!block) throw new Error(`${filePath} lacks YAML front matter.`);
+  if (!block) return {};
 
   let fields: unknown;
   try {
@@ -183,14 +184,11 @@ function parseFrontmatter(
       schema: "core",
       uniqueKeys: true,
     }) as unknown;
-  } catch (error) {
-    throw new Error(
-      `${filePath} contains invalid YAML front matter: ${errorMessage(error)}`,
-      { cause: error },
-    );
+  } catch {
+    return {};
   }
   if (fields === null || typeof fields !== "object" || Array.isArray(fields)) {
-    throw new Error(`${filePath} YAML front matter must be a mapping.`);
+    return {};
   }
 
   const { description, title } = fields as Record<string, unknown>;
@@ -206,11 +204,6 @@ function parseFrontmatter(
 function usableString(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   return value;
-}
-
-/** Converts an unknown thrown value into a readable message. */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Reads a text file from the backend or throws an actionable error. */
