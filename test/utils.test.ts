@@ -5,8 +5,10 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   computeVaultFileHashes,
   createOpenWikiContentSnapshot,
+  createRunContext,
   diffVaultFileHashes,
   formatManualEditsSummary,
+  writeLastUpdateMetadata,
 } from "../src/agent/utils.ts";
 import { stripHtmlTags } from "../src/utils.ts";
 
@@ -129,5 +131,37 @@ describe("vault file hash manifest", () => {
     expect(summary).toContain("Modified:");
     expect(summary).toContain("- ...and 5 more");
     expect(summary).not.toContain("Deleted:");
+  });
+});
+
+describe("obsidian-vault run context", () => {
+  test("reads wiki goal from vault INSTRUCTIONS.md and reports manual edits", async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), "openwiki-vault-ctx-"));
+    tempDirs.push(vault);
+    await writeFile(path.join(vault, "INSTRUCTIONS.md"), "Track my research\n");
+    await writeFile(path.join(vault, "quickstart.md"), "---\ntype: Guide\n---\n");
+
+    await writeLastUpdateMetadata("update", vault, "test-model", "obsidian-vault");
+
+    await writeFile(path.join(vault, "quickstart.md"), "---\ntype: Guide\n---\nedited by human\n");
+    await writeFile(path.join(vault, "human-note.md"), "no frontmatter note\n");
+
+    const context = await createRunContext("update", vault, "obsidian-vault");
+
+    expect(context.wikiGoal).toBe("Track my research");
+    expect(context.gitSummary).toContain("Obsidian vault mode:");
+    expect(context.gitSummary).toContain("Manual edits since last OpenWiki run:");
+    expect(context.gitSummary).toContain("- human-note.md");
+    expect(context.gitSummary).toContain("- quickstart.md");
+  });
+
+  test("init run without manifest treats vault content as human-authored", async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), "openwiki-vault-init-"));
+    tempDirs.push(vault);
+
+    const context = await createRunContext("init", vault, "obsidian-vault");
+
+    expect(context.gitSummary).toContain("Obsidian vault mode:");
+    expect(context.gitSummary).toContain("human-authored");
   });
 });

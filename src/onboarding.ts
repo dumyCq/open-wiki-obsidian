@@ -166,6 +166,52 @@ export async function saveRepositoryWikiInstructions(
   });
 }
 
+export function getVaultWikiInstructionsPath(vaultDir: string): string {
+  return path.join(vaultDir, REPOSITORY_INSTRUCTIONS_FILE);
+}
+
+export async function readVaultWikiInstructions(
+  vaultDir: string,
+): Promise<string | undefined> {
+  try {
+    const content = (
+      await readFile(getVaultWikiInstructionsPath(vaultDir), "utf8")
+    ).trim();
+    return content.length > 0 ? content : undefined;
+  } catch (error) {
+    if (isFileNotFoundError(error)) {
+      return undefined;
+    }
+
+    throw error;
+  }
+}
+
+export function readVaultWikiInstructionsSync(
+  vaultDir: string,
+): string | undefined {
+  const instructionsPath = getVaultWikiInstructionsPath(vaultDir);
+
+  if (!existsSync(instructionsPath)) {
+    return undefined;
+  }
+
+  const content = readFileSync(instructionsPath, "utf8").trim();
+  return content.length > 0 ? content : undefined;
+}
+
+export async function saveVaultWikiInstructions(
+  vaultDir: string,
+  wikiGoal: string,
+): Promise<void> {
+  const instructionsPath = getVaultWikiInstructionsPath(vaultDir);
+  await mkdir(path.dirname(instructionsPath), { recursive: true });
+  await writeFile(instructionsPath, `${wikiGoal.trim()}\n`, {
+    encoding: "utf8",
+    mode: 0o644,
+  });
+}
+
 export function isOnboardingComplete(
   config: OpenWikiOnboardingConfig,
 ): boolean {

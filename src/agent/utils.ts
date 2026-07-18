@@ -11,6 +11,7 @@ import {
 import {
   readOpenWikiOnboardingConfig,
   readRepositoryWikiInstructions,
+  readVaultWikiInstructions,
 } from "../onboarding.js";
 import type {
   OpenWikiCommand,
@@ -56,6 +57,14 @@ export async function createRunContext(
     };
   }
 
+  if (outputMode === "obsidian-vault") {
+    return {
+      lastUpdate,
+      gitSummary: await createVaultEditSummary(command, cwd, lastUpdate),
+      wikiGoal,
+    };
+  }
+
   if (outputMode === "local-wiki") {
     return {
       lastUpdate,
@@ -78,6 +87,10 @@ async function readRunWikiGoal(
 ): Promise<string | undefined> {
   if (outputMode === "repository") {
     return readRepositoryWikiInstructions(cwd);
+  }
+
+  if (outputMode === "obsidian-vault") {
+    return readVaultWikiInstructions(cwd);
   }
 
   return (await readOpenWikiOnboardingConfig()).wikiGoal;
@@ -453,6 +466,26 @@ async function readSnapshotFile(filePath: string): Promise<Buffer | null> {
 
     throw error;
   }
+}
+
+const VAULT_MODE_CONTEXT_HEADER =
+  "Obsidian vault mode: the wiki is stored in an Obsidian vault. Git repository diff context is not used for this run. Manual edits made in Obsidian are authoritative input: incorporate them and never revert them.";
+
+async function createVaultEditSummary(
+  command: OpenWikiCommand,
+  vaultRoot: string,
+  lastUpdate: UpdateMetadata | null,
+): Promise<string> {
+  if (command === "init" || !lastUpdate?.vaultFileHashes) {
+    return `${VAULT_MODE_CONTEXT_HEADER}\nNo previous OpenWiki file manifest exists. Treat all existing vault content as human-authored and authoritative.`;
+  }
+
+  const diff = diffVaultFileHashes(
+    lastUpdate.vaultFileHashes,
+    await computeVaultFileHashes(vaultRoot),
+  );
+
+  return `${VAULT_MODE_CONTEXT_HEADER}\n\nManual edits since last OpenWiki run:\n${formatManualEditsSummary(diff)}`;
 }
 
 /**
