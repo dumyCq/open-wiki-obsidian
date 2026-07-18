@@ -159,6 +159,7 @@ export async function writeLastUpdateMetadata(
   cwd: string,
   modelId: string,
   outputMode: OpenWikiOutputMode = "repository",
+  precomputedVaultFileHashes?: Record<string, string>,
 ): Promise<void> {
   const metadataFile = getMetadataFilePath(cwd, outputMode);
   const metadata: UpdateMetadata = {
@@ -167,7 +168,10 @@ export async function writeLastUpdateMetadata(
     gitHead: outputMode === "repository" ? await getGitHead(cwd) : undefined,
     model: modelId,
     ...(outputMode === "obsidian-vault"
-      ? { vaultFileHashes: await computeVaultFileHashes(cwd) }
+      ? {
+          vaultFileHashes:
+            precomputedVaultFileHashes ?? (await computeVaultFileHashes(cwd)),
+        }
       : {}),
   };
 
@@ -197,6 +201,7 @@ export async function persistRunMetadataIfChanged(
 
   const contentUnchanged =
     snapshotBefore === (await createOpenWikiContentSnapshot(cwd, outputMode));
+  let currentVaultFileHashes: Record<string, string> | undefined;
 
   if (contentUnchanged) {
     if (outputMode !== "obsidian-vault") {
@@ -208,44 +213,35 @@ export async function persistRunMetadataIfChanged(
     // changes), the vault manifest still needs to be refreshed. Otherwise the
     // same manual edits are reported as new on every subsequent run and the
     // loop never converges.
-    const [lastUpdate, currentVaultFileHashes] = await Promise.all([
+    const [lastUpdate, vaultFileHashes] = await Promise.all([
       readLastUpdate(cwd, outputMode),
       computeVaultFileHashes(cwd),
     ]);
+    currentVaultFileHashes = vaultFileHashes;
 
-    if (
-      areVaultFileHashesEqual(
-        lastUpdate?.vaultFileHashes,
-        currentVaultFileHashes,
-      )
-    ) {
+    const diff = diffVaultFileHashes(
+      lastUpdate?.vaultFileHashes,
+      currentVaultFileHashes,
+    );
+    const manifestChanged =
+      diff.added.length > 0 ||
+      diff.modified.length > 0 ||
+      diff.deleted.length > 0;
+
+    if (!manifestChanged) {
       return false;
     }
   }
 
-  await writeLastUpdateMetadata(command, cwd, modelId, outputMode);
+  await writeLastUpdateMetadata(
+    command,
+    cwd,
+    modelId,
+    outputMode,
+    currentVaultFileHashes,
+  );
 
   return true;
-}
-
-/**
- * Explicit key/value comparison (no JSON.stringify ordering assumptions).
- */
-function areVaultFileHashesEqual(
-  previous: Record<string, string> | undefined,
-  current: Record<string, string>,
-): boolean {
-  if (!previous) {
-    return false;
-  }
-
-  const previousKeys = Object.keys(previous);
-
-  if (previousKeys.length !== Object.keys(current).length) {
-    return false;
-  }
-
-  return previousKeys.every((key) => previous[key] === current[key]);
 }
 
 /**
@@ -305,13 +301,21 @@ async function readLastUpdate(
   }
 }
 
+type ContentTreeVisitors = {
+  onMissing?: () => void;
+  onDirectory?: (relativePath: string) => void;
+  onFile: (relativePath: string, content: Buffer) => void;
+};
+
 /**
- * Recursively adds stable file paths and bytes to the OpenWiki content snapshot.
+ * Shared recursive directory walk used by both the content snapshot hash and
+ * the vault file hash manifest: readdir + race-tolerant missing-dir handling
+ * + deterministic sort + dot-entry skip + recurse + race-tolerant file read.
  */
-async function addDirectoryToSnapshot(
-  hash: ReturnType<typeof createHash>,
+async function walkContentTree(
   directory: string,
   relativeDirectory: string,
+  visitors: ContentTreeVisitors,
 ): Promise<void> {
   let entries: Dirent[];
 
@@ -319,7 +323,7 @@ async function addDirectoryToSnapshot(
     entries = await readdir(directory, { withFileTypes: true });
   } catch (error) {
     if (isExpectedSnapshotRaceError(error)) {
-      hash.update("missing");
+      visitors.onMissing?.();
       return;
     }
 
@@ -329,9 +333,6 @@ async function addDirectoryToSnapshot(
   for (const entry of entries.sort((left, right) =>
     left.name.localeCompare(right.name),
   )) {
-    const entryPath = path.join(directory, entry.name);
-    const relativePath = path.posix.join(relativeDirectory, entry.name);
-
     // Dot entries (.obsidian/, .last-update.json, .git, ...) are runtime or
     // app state, not wiki content; hashing them would make Obsidian workspace
     // churn look like documentation changes.
@@ -339,9 +340,12 @@ async function addDirectoryToSnapshot(
       continue;
     }
 
+    const entryPath = path.join(directory, entry.name);
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
+
     if (entry.isDirectory()) {
-      hash.update(`dir:${relativePath}\0`);
-      await addDirectoryToSnapshot(hash, entryPath, relativePath);
+      visitors.onDirectory?.(relativePath);
+      await walkContentTree(entryPath, relativePath, visitors);
       continue;
     }
 
@@ -355,10 +359,27 @@ async function addDirectoryToSnapshot(
       continue;
     }
 
-    hash.update(`file:${relativePath}\0`);
-    hash.update(fileContent);
-    hash.update("\0");
+    visitors.onFile(relativePath, fileContent);
   }
+}
+
+/**
+ * Recursively adds stable file paths and bytes to the OpenWiki content snapshot.
+ */
+async function addDirectoryToSnapshot(
+  hash: ReturnType<typeof createHash>,
+  directory: string,
+  relativeDirectory: string,
+): Promise<void> {
+  await walkContentTree(directory, relativeDirectory, {
+    onMissing: () => hash.update("missing"),
+    onDirectory: (relativePath) => hash.update(`dir:${relativePath}\0`),
+    onFile: (relativePath, content) => {
+      hash.update(`file:${relativePath}\0`);
+      hash.update(content);
+      hash.update("\0");
+    },
+  });
 }
 
 export type VaultEditDiff = {
@@ -386,45 +407,11 @@ async function addDirectoryToVaultHashes(
   directory: string,
   relativeDirectory: string,
 ): Promise<void> {
-  let entries: Dirent[];
-
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (isExpectedSnapshotRaceError(error)) {
-      return;
-    }
-
-    throw error;
-  }
-
-  for (const entry of entries.sort((left, right) =>
-    left.name.localeCompare(right.name),
-  )) {
-    if (entry.name.startsWith(".")) {
-      continue;
-    }
-
-    const entryPath = path.join(directory, entry.name);
-    const relativePath = path.posix.join(relativeDirectory, entry.name);
-
-    if (entry.isDirectory()) {
-      await addDirectoryToVaultHashes(hashes, entryPath, relativePath);
-      continue;
-    }
-
-    if (!entry.isFile()) {
-      continue;
-    }
-
-    const fileContent = await readSnapshotFile(entryPath);
-
-    if (fileContent === null) {
-      continue;
-    }
-
-    hashes[relativePath] = createHash("sha256").update(fileContent).digest("hex");
-  }
+  await walkContentTree(directory, relativeDirectory, {
+    onFile: (relativePath, content) => {
+      hashes[relativePath] = createHash("sha256").update(content).digest("hex");
+    },
+  });
 }
 
 export function diffVaultFileHashes(

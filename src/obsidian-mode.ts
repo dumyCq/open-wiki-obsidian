@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { OPENWIKI_OBSIDIAN_VAULT_ENV_KEY } from "./constants.js";
 import { isFileExistsError } from "./fs-errors.js";
+import { expandHomePath } from "./utils.js";
 
 export type ObsidianVaultSetupResult = {
   vaultDir: string;
@@ -67,18 +68,6 @@ export async function ensureObsidianVaultSetup(
       { cause: error },
     );
   }
-}
-
-function expandHomePath(value: string): string {
-  if (value === "~") {
-    return os.homedir();
-  }
-
-  if (value.startsWith("~/") || value.startsWith("~\\")) {
-    return path.resolve(os.homedir(), value.slice(2));
-  }
-
-  return path.resolve(value);
 }
 
 async function mkdirIfMissing(dir: string): Promise<boolean> {

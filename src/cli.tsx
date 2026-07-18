@@ -548,12 +548,7 @@ function App({ command }: AppProps) {
         });
     }
 
-    const setupPromise =
-      runMode === "code"
-        ? ensureCodeModeRepoSetup(runtimeCwd)
-        : runMode === "obsidian"
-          ? ensureObsidianVaultSetup(runtimeCwd).then(() => undefined)
-          : Promise.resolve();
+    const setupPromise = ensureRunModeSetup(runMode, runtimeCwd);
 
     setupPromise
       .then(() =>
@@ -657,11 +652,7 @@ function App({ command }: AppProps) {
 
     if (runState.status === "success" && autoExitOnSuccess) {
       process.exitCode = 0;
-      if (runMode === "obsidian") {
-        process.stdout.write(
-          `\nOpen in Obsidian: ${createObsidianVaultUri(runtimeCwd)}\n`,
-        );
-      }
+      writeObsidianOpenHint(runMode, runtimeCwd);
       app.exit();
       return;
     }
@@ -3960,6 +3951,26 @@ function getRunModeCwd(
   return mode === "obsidian" ? getObsidianVaultDir() : openWikiLocalWikiDir;
 }
 
+function ensureRunModeSetup(mode: OpenWikiRunMode, cwd: string): Promise<void> {
+  if (mode === "code") {
+    return ensureCodeModeRepoSetup(cwd);
+  }
+
+  if (mode === "obsidian") {
+    return ensureObsidianVaultSetup(cwd).then(() => undefined);
+  }
+
+  return Promise.resolve();
+}
+
+function writeObsidianOpenHint(mode: OpenWikiRunMode, cwd: string): void {
+  if (mode !== "obsidian") {
+    return;
+  }
+
+  process.stdout.write(`\nOpen in Obsidian: ${createObsidianVaultUri(cwd)}\n`);
+}
+
 function getRunModeOutputMode(mode: OpenWikiRunMode): OpenWikiOutputMode {
   if (mode === "code") {
     return "repository";
@@ -3991,11 +4002,7 @@ async function runPrintCommand(
     const runtimeCwd = getRunModeCwd(command.mode);
     const runtimeOutputMode = getRunModeOutputMode(command.mode);
 
-    if (command.mode === "code") {
-      await ensureCodeModeRepoSetup(runtimeCwd);
-    } else if (command.mode === "obsidian") {
-      await ensureObsidianVaultSetup(runtimeCwd);
-    }
+    await ensureRunModeSetup(command.mode, runtimeCwd);
 
     await runOpenWikiAgent(command.command, runtimeCwd, {
       debug: isDebugMode(),
@@ -4018,11 +4025,7 @@ async function runPrintCommand(
       process.stdout.write(`${text}\n`);
     }
 
-    if (command.mode === "obsidian") {
-      process.stdout.write(
-        `\nOpen in Obsidian: ${createObsidianVaultUri(runtimeCwd)}\n`,
-      );
-    }
+    writeObsidianOpenHint(command.mode, runtimeCwd);
 
     process.exitCode = 0;
   } catch (error) {

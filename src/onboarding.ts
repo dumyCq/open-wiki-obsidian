@@ -127,43 +127,24 @@ export function getRepositoryWikiInstructionsPath(repoRoot: string): string {
 export async function readRepositoryWikiInstructions(
   repoRoot: string,
 ): Promise<string | undefined> {
-  try {
-    const content = (
-      await readFile(getRepositoryWikiInstructionsPath(repoRoot), "utf8")
-    ).trim();
-    return content.length > 0 ? content : undefined;
-  } catch (error) {
-    if (isFileNotFoundError(error)) {
-      return undefined;
-    }
-
-    throw error;
-  }
+  return readInstructionsFile(getRepositoryWikiInstructionsPath(repoRoot));
 }
 
 function readRepositoryWikiInstructionsSync(
   repoRoot: string,
 ): string | undefined {
-  const instructionsPath = getRepositoryWikiInstructionsPath(repoRoot);
-
-  if (!existsSync(instructionsPath)) {
-    return undefined;
-  }
-
-  const content = readFileSync(instructionsPath, "utf8").trim();
-  return content.length > 0 ? content : undefined;
+  return readInstructionsFileSync(getRepositoryWikiInstructionsPath(repoRoot));
 }
 
 export async function saveRepositoryWikiInstructions(
   repoRoot: string,
   wikiGoal: string,
 ): Promise<void> {
-  const instructionsPath = getRepositoryWikiInstructionsPath(repoRoot);
-  await mkdir(path.dirname(instructionsPath), { recursive: true });
-  await writeFile(instructionsPath, `${wikiGoal.trim()}\n`, {
-    encoding: "utf8",
-    mode: 0o644,
-  });
+  await saveInstructionsFile(
+    getRepositoryWikiInstructionsPath(repoRoot),
+    wikiGoal,
+    0o644,
+  );
 }
 
 export function getVaultWikiInstructionsPath(vaultDir: string): string {
@@ -173,10 +154,31 @@ export function getVaultWikiInstructionsPath(vaultDir: string): string {
 export async function readVaultWikiInstructions(
   vaultDir: string,
 ): Promise<string | undefined> {
+  return readInstructionsFile(getVaultWikiInstructionsPath(vaultDir));
+}
+
+export function readVaultWikiInstructionsSync(
+  vaultDir: string,
+): string | undefined {
+  return readInstructionsFileSync(getVaultWikiInstructionsPath(vaultDir));
+}
+
+export async function saveVaultWikiInstructions(
+  vaultDir: string,
+  wikiGoal: string,
+): Promise<void> {
+  await saveInstructionsFile(
+    getVaultWikiInstructionsPath(vaultDir),
+    wikiGoal,
+    0o644,
+  );
+}
+
+async function readInstructionsFile(
+  filePath: string,
+): Promise<string | undefined> {
   try {
-    const content = (
-      await readFile(getVaultWikiInstructionsPath(vaultDir), "utf8")
-    ).trim();
+    const content = (await readFile(filePath, "utf8")).trim();
     return content.length > 0 ? content : undefined;
   } catch (error) {
     if (isFileNotFoundError(error)) {
@@ -187,28 +189,24 @@ export async function readVaultWikiInstructions(
   }
 }
 
-export function readVaultWikiInstructionsSync(
-  vaultDir: string,
-): string | undefined {
-  const instructionsPath = getVaultWikiInstructionsPath(vaultDir);
-
-  if (!existsSync(instructionsPath)) {
+function readInstructionsFileSync(filePath: string): string | undefined {
+  if (!existsSync(filePath)) {
     return undefined;
   }
 
-  const content = readFileSync(instructionsPath, "utf8").trim();
+  const content = readFileSync(filePath, "utf8").trim();
   return content.length > 0 ? content : undefined;
 }
 
-export async function saveVaultWikiInstructions(
-  vaultDir: string,
+async function saveInstructionsFile(
+  filePath: string,
   wikiGoal: string,
+  mode: number,
 ): Promise<void> {
-  const instructionsPath = getVaultWikiInstructionsPath(vaultDir);
-  await mkdir(path.dirname(instructionsPath), { recursive: true });
-  await writeFile(instructionsPath, `${wikiGoal.trim()}\n`, {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${wikiGoal.trim()}\n`, {
     encoding: "utf8",
-    mode: 0o644,
+    mode,
   });
 }
 
@@ -244,31 +242,22 @@ export function isOpenWikiOnboardingCompleteSync(): boolean {
 export function isRepositoryCodeOnboardingCompleteSync(
   repoRoot: string,
 ): boolean {
-  if (!existsSync(openWikiOnboardingPath)) {
-    return false;
-  }
-
-  try {
-    const config = normalizeOnboardingConfig(
-      JSON.parse(readFileSync(openWikiOnboardingPath, "utf8")),
-    );
-    if (!isCodeModeConfig(config)) {
-      return false;
-    }
-
-    const wikiGoal = readRepositoryWikiInstructionsSync(repoRoot);
-
-    return isOnboardingComplete({
-      ...config,
-      wikiGoal,
-    });
-  } catch {
-    return false;
-  }
+  return isModeOnboardingCompleteSync(isCodeModeConfig, () =>
+    readRepositoryWikiInstructionsSync(repoRoot),
+  );
 }
 
 export function isObsidianVaultOnboardingCompleteSync(
   vaultDir: string,
+): boolean {
+  return isModeOnboardingCompleteSync(isObsidianModeConfig, () =>
+    readVaultWikiInstructionsSync(vaultDir),
+  );
+}
+
+function isModeOnboardingCompleteSync(
+  isMode: (config: OpenWikiOnboardingConfig) => boolean,
+  readWikiGoal: () => string | undefined,
 ): boolean {
   if (!existsSync(openWikiOnboardingPath)) {
     return false;
@@ -278,13 +267,13 @@ export function isObsidianVaultOnboardingCompleteSync(
     const config = normalizeOnboardingConfig(
       JSON.parse(readFileSync(openWikiOnboardingPath, "utf8")),
     );
-    if (!isObsidianModeConfig(config)) {
+    if (!isMode(config)) {
       return false;
     }
 
     return isOnboardingComplete({
       ...config,
-      wikiGoal: readVaultWikiInstructionsSync(vaultDir),
+      wikiGoal: readWikiGoal(),
     });
   } catch {
     return false;
@@ -432,11 +421,13 @@ function normalizeOnboardingConfig(value: unknown): OpenWikiOnboardingConfig {
   return config;
 }
 
-function isCodeModeConfig(config: OpenWikiOnboardingConfig): boolean {
+export function isCodeModeConfig(config: OpenWikiOnboardingConfig): boolean {
   return (config.modeId ?? config.templateId) === "code";
 }
 
-function isObsidianModeConfig(config: OpenWikiOnboardingConfig): boolean {
+export function isObsidianModeConfig(
+  config: OpenWikiOnboardingConfig,
+): boolean {
   return (config.modeId ?? config.templateId) === "obsidian";
 }
 

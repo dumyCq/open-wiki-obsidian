@@ -1,3 +1,23 @@
+import os from "node:os";
+import path from "node:path";
+
+/**
+ * Expands a leading `~` (home directory shorthand) and resolves the result to
+ * an absolute path. `~` and `~/`/`~\` prefixes expand against the user's home
+ * directory; anything else is resolved as-is via `path.resolve`.
+ */
+export function expandHomePath(value: string): string {
+  if (value === "~") {
+    return os.homedir();
+  }
+
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.resolve(os.homedir(), value.slice(2));
+  }
+
+  return path.resolve(value);
+}
+
 /**
  * Removes HTML tags from a string and returns the remaining plain text.
  *

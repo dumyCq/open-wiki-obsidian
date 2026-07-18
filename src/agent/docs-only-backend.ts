@@ -55,6 +55,8 @@ export class OpenWikiLocalShellBackend extends LocalShellBackend {
 
   private getDocsOnlyWriteError(filePath: string): string | null {
     if (this.outputMode === "obsidian-vault") {
+      // The .obsidian guard is intentional regardless of docsOnly: it also
+      // applies to chat runs, not just init/update.
       return isObsidianConfigPath(filePath)
         ? `OpenWiki must not modify Obsidian settings under /.obsidian/. Refused path: ${filePath}`
         : null;
@@ -86,18 +88,15 @@ function markMutation<Result extends WriteResult | EditResult>(
   return result;
 }
 
-export function isOpenWikiDocsPath(filePath: string): boolean {
-  const normalizedPath = filePath.trim().replace(/\\/gu, "/");
-  const virtualPath = normalizedPath.replace(/^\/+/u, "");
+function isPathUnderVirtualDir(filePath: string, dirName: string): boolean {
+  const virtualPath = filePath.trim().replace(/\\/gu, "/").replace(/^\/+/u, "");
+  return virtualPath === dirName || virtualPath.startsWith(`${dirName}/`);
+}
 
-  return (
-    virtualPath === OPEN_WIKI_DIR || virtualPath.startsWith(`${OPEN_WIKI_DIR}/`)
-  );
+export function isOpenWikiDocsPath(filePath: string): boolean {
+  return isPathUnderVirtualDir(filePath, OPEN_WIKI_DIR);
 }
 
 export function isObsidianConfigPath(filePath: string): boolean {
-  const normalizedPath = filePath.trim().replace(/\\/gu, "/");
-  const virtualPath = normalizedPath.replace(/^\/+/u, "");
-
-  return virtualPath === ".obsidian" || virtualPath.startsWith(".obsidian/");
+  return isPathUnderVirtualDir(filePath, ".obsidian");
 }

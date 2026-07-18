@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { homedir } from "node:os";
 import path from "node:path";
 import { Box, Text, useInput, useStdout } from "ink";
 import { configureAuthProvider } from "./auth/configure.js";
@@ -57,6 +56,8 @@ import { getConnectorConfigPath } from "./openwiki-home.js";
 import { openWikiEnvPath, saveOpenWikiEnv } from "./env.js";
 import {
   createEmptyOnboardingConfig,
+  isCodeModeConfig,
+  isObsidianModeConfig,
   isObsidianVaultOnboardingCompleteSync,
   isOpenWikiOnboardingCompleteSync,
   isOnboardingComplete,
@@ -81,6 +82,7 @@ import {
   installConnectorSchedule,
   validateCronExpression,
 } from "./schedules.js";
+import { expandHomePath } from "./utils.js";
 
 export type InitSetupResult = {
   mode: OpenWikiRunMode;
@@ -1610,16 +1612,18 @@ export function InitSetup({
         ...onboardingConfig,
         wikiGoal,
       };
-      await saveConfigForCurrentMode(nextConfig);
-      setInput("");
 
-      if (isCodeMode(nextConfig)) {
-        setStep("final");
+      if (isObsidianModeConfig(nextConfig)) {
+        setInput("");
+        await finishObsidianSetup(nextConfig);
         return;
       }
 
-      if (isObsidianModeSelected(nextConfig)) {
-        await finishObsidianSetup(nextConfig);
+      await saveConfigForCurrentMode(nextConfig);
+      setInput("");
+
+      if (isCodeModeConfig(nextConfig)) {
+        setStep("final");
         return;
       }
 
@@ -2344,7 +2348,7 @@ export function InitSetup({
   }
 
   async function saveConfigForCurrentMode(config: OpenWikiOnboardingConfig) {
-    if (isObsidianModeSelected(config)) {
+    if (isObsidianModeConfig(config)) {
       setIsSaving(true);
       try {
         if (config.wikiGoal?.trim()) {
@@ -2363,7 +2367,7 @@ export function InitSetup({
       return;
     }
 
-    if (!isCodeMode(config)) {
+    if (!isCodeModeConfig(config)) {
       await saveConfig(config);
       return;
     }
@@ -3283,12 +3287,12 @@ function Prompt({
     return (
       <Box flexDirection="column">
         <Text>
-          {isCodeMode(onboardingConfig)
+          {isCodeModeConfig(onboardingConfig)
             ? "When should GitHub Actions refresh this code wiki?"
             : "When should OpenWiki run all ingestion?"}
         </Text>
         <Text color="gray">
-          {isCodeMode(onboardingConfig)
+          {isCodeModeConfig(onboardingConfig)
             ? "OpenWiki will write a scheduled GitHub Actions workflow for this repository."
             : "All configured sources run sequentially at this time."}
         </Text>
@@ -3309,7 +3313,7 @@ function Prompt({
     return (
       <Box flexDirection="column">
         <Text>
-          {isCodeMode(onboardingConfig)
+          {isCodeModeConfig(onboardingConfig)
             ? "Enter one GitHub Actions cron schedule for this code wiki."
             : "Enter one cron schedule for all ingestion."}
         </Text>
@@ -3818,6 +3822,18 @@ export function getInitialStep(
     return "langsmith";
   }
 
+  return getOnboardingTailStep(mode, onboardingConfig);
+}
+
+/**
+ * Shared routing tail for getInitialStep and getNextStepAfterRegion once
+ * provider/model/langsmith setup is satisfied: walks mode confirmation,
+ * template selection, wiki goal, cron mode, and source menu steps.
+ */
+function getOnboardingTailStep(
+  mode: OpenWikiRunMode,
+  onboardingConfig: OpenWikiOnboardingConfig,
+): PromptStep | null {
   if (mode === "code" && !isOnboardingComplete(onboardingConfig)) {
     return "code-repo-confirm";
   }
@@ -3835,8 +3851,8 @@ export function getInitialStep(
   }
 
   if (
-    !isCodeMode(onboardingConfig) &&
-    !isObsidianModeSelected(onboardingConfig) &&
+    !isCodeModeConfig(onboardingConfig) &&
+    !isObsidianModeConfig(onboardingConfig) &&
     !onboardingConfig.ingestionSchedule
   ) {
     return "global-cron-mode";
@@ -3967,35 +3983,7 @@ function getNextStepAfterRegion(
     return "langsmith";
   }
 
-  if (mode === "code" && !isOnboardingComplete(onboardingConfig)) {
-    return "code-repo-confirm";
-  }
-
-  if (mode === "obsidian" && !isOnboardingComplete(onboardingConfig)) {
-    return "obsidian-vault-confirm";
-  }
-
-  if (!getConfigModeId(onboardingConfig)) {
-    return "template";
-  }
-
-  if (!onboardingConfig.wikiGoal) {
-    return "wiki-goal";
-  }
-
-  if (
-    !isCodeMode(onboardingConfig) &&
-    !isObsidianModeSelected(onboardingConfig) &&
-    !onboardingConfig.ingestionSchedule
-  ) {
-    return "global-cron-mode";
-  }
-
-  if (!isOnboardingComplete(onboardingConfig)) {
-    return "source-menu";
-  }
-
-  return null;
+  return getOnboardingTailStep(mode, onboardingConfig);
 }
 
 function ensureRunModeConfig(
@@ -4027,17 +4015,13 @@ async function hydrateRunModeConfig(
   mode: OpenWikiRunMode,
   repoRoot: string,
 ): Promise<OpenWikiOnboardingConfig> {
-  if (mode === "code") {
-    const wikiGoal = await readRepositoryWikiInstructions(repoRoot);
-    return wikiGoal ? { ...config, wikiGoal } : config;
-  }
-
-  if (mode === "obsidian") {
-    const wikiGoal = await readVaultWikiInstructions(getObsidianVaultDir());
-    return wikiGoal ? { ...config, wikiGoal } : config;
-  }
-
-  return config;
+  const wikiGoal =
+    mode === "code"
+      ? await readRepositoryWikiInstructions(repoRoot)
+      : mode === "obsidian"
+        ? await readVaultWikiInstructions(getObsidianVaultDir())
+        : undefined;
+  return wikiGoal ? { ...config, wikiGoal } : config;
 }
 
 function getRunModeSelectionIndex(mode: OpenWikiRunMode): number {
@@ -4063,14 +4047,6 @@ function getConfigModeName(
   config: OpenWikiOnboardingConfig,
 ): string | undefined {
   return config.modeName ?? config.templateName;
-}
-
-function isCodeMode(config: OpenWikiOnboardingConfig): boolean {
-  return getConfigModeId(config) === "code";
-}
-
-function isObsidianModeSelected(config: OpenWikiOnboardingConfig): boolean {
-  return getConfigModeId(config) === "obsidian";
 }
 
 function needsEnvValue(secretInput: SourceSecretInput): boolean {
@@ -4527,15 +4503,7 @@ function normalizeLocalPath(value: string): string {
     return "";
   }
 
-  if (trimmedValue === "~") {
-    return homedir();
-  }
-
-  if (trimmedValue.startsWith("~/") || trimmedValue.startsWith("~\\")) {
-    return path.resolve(homedir(), trimmedValue.slice(2));
-  }
-
-  return path.resolve(trimmedValue);
+  return expandHomePath(trimmedValue);
 }
 
 function getStaticSourceConfig(
