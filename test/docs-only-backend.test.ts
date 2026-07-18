@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+  isObsidianConfigPath,
   isOpenWikiDocsPath,
   MUTATION_PATH_METADATA_KEY,
   OpenWikiLocalShellBackend,
@@ -81,5 +82,58 @@ describe("OpenWikiLocalShellBackend", () => {
     await expect(
       readFile(path.join(rootDir, "notes.md"), "utf8"),
     ).resolves.toBe("ok");
+  });
+
+  describe("obsidian-vault output mode", () => {
+    test("allows root-level and nested wiki writes", async () => {
+      const rootDir = await mkdtemp(
+        path.join(os.tmpdir(), "openwiki-vault-backend-"),
+      );
+      const backend = new OpenWikiLocalShellBackend({
+        docsOnly: true,
+        outputMode: "obsidian-vault",
+        rootDir,
+        virtualMode: true,
+      });
+
+      const result = await backend.write(
+        "/quickstart.md",
+        "---\ntype: Guide\n---\n",
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result.metadata?.[MUTATION_PATH_METADATA_KEY]).toBeDefined();
+      expect(
+        await readFile(path.join(rootDir, "quickstart.md"), "utf8"),
+      ).toContain("type: Guide");
+    });
+
+    test("refuses writes under .obsidian", async () => {
+      const rootDir = await mkdtemp(
+        path.join(os.tmpdir(), "openwiki-vault-backend-"),
+      );
+      const backend = new OpenWikiLocalShellBackend({
+        docsOnly: true,
+        outputMode: "obsidian-vault",
+        rootDir,
+        virtualMode: true,
+      });
+
+      const result = await backend.write("/.obsidian/app.json", "{}");
+
+      expect(result.error).toBe(
+        "OpenWiki must not modify Obsidian settings under /.obsidian/. Refused path: /.obsidian/app.json",
+      );
+    });
+  });
+
+  describe("isObsidianConfigPath", () => {
+    test("matches .obsidian paths in any normalized form", () => {
+      expect(isObsidianConfigPath("/.obsidian/app.json")).toBe(true);
+      expect(isObsidianConfigPath(".obsidian")).toBe(true);
+      expect(isObsidianConfigPath("\\.obsidian\\graph.json")).toBe(true);
+      expect(isObsidianConfigPath("/notes/.obsidian.md")).toBe(false);
+      expect(isObsidianConfigPath("/quickstart.md")).toBe(false);
+    });
   });
 });
