@@ -98,6 +98,12 @@ Start the interactive local personal brain instead:
 openwiki personal
 ```
 
+Start the interactive Obsidian vault wiki instead:
+
+```sh
+openwiki obsidian
+```
+
 Run a single command and exit:
 
 ```sh
@@ -116,6 +122,12 @@ Initialize the local personal brain wiki:
 openwiki personal --init
 ```
 
+Initialize the Obsidian vault wiki:
+
+```sh
+openwiki obsidian --init
+```
+
 Update repository code documentation:
 
 ```sh
@@ -126,6 +138,12 @@ Update the local personal brain wiki:
 
 ```sh
 openwiki personal --update
+```
+
+Update the Obsidian vault wiki, folding in any edits made in Obsidian:
+
+```sh
+openwiki obsidian --update "Fold in my manual notes"
 ```
 
 Run an update that can ingest configured local connectors first:
@@ -167,9 +185,9 @@ URL in Slack. If you have a fixed ngrok domain, run
 ignore that HTTPS override and keep using the local loopback callback,
 `http://127.0.0.1:53682/callback`.
 
-Bare `openwiki` runs in code mode for the current repository. It creates initial repository documentation in `openwiki/` when no wiki exists. Use `openwiki personal` for the local general-purpose wiki in `~/.openwiki/wiki/`. By default, the CLI stays open after each run so you can send follow-up messages. Use `-p` or `--print` for a one-shot non-interactive run that prints the final assistant output.
+Bare `openwiki` runs in code mode for the current repository. It creates initial repository documentation in `openwiki/` when no wiki exists. Use `openwiki personal` for the local general-purpose wiki in `~/.openwiki/wiki/`, or `openwiki obsidian` for the wiki stored inside an Obsidian vault (see [Obsidian mode](#obsidian-mode) below). By default, the CLI stays open after each run so you can send follow-up messages. Use `-p` or `--print` for a one-shot non-interactive run that prints the final assistant output.
 
-Bare `openwiki --init` and `openwiki --update` default to code mode and operate on repository documentation. Use the `personal` positional mode or `--mode personal` to initialize or update the local personal brain wiki.
+Bare `openwiki --init` and `openwiki --update` default to code mode and operate on repository documentation. Use the `personal` positional mode or `--mode personal` to initialize or update the local personal brain wiki, and `obsidian` or `--mode obsidian` for the Obsidian vault wiki.
 
 On each `code` run, `openwiki` maintains both an `AGENTS.md` and a `CLAUDE.md` at the repository root, adding prompting that instructs your coding agent to reference the wiki when searching for context. Each file is created if it does not already exist. If a file is present, OpenWiki only rewrites its own `<!-- OPENWIKI:START -->…<!-- OPENWIKI:END -->` block and leaves the rest of your content untouched (appending the block the first time). The scheduled GitHub Actions workflow includes these files, along with the workflow itself, in the documentation pull request.
 
@@ -182,6 +200,27 @@ runs unless you explicitly ask to change the brief.
 On the first interactive run, OpenWiki will have you configure your inference provider, API key, and LLM. You will also be able to set a LangSmith API key to trace your OpenWiki runs to a LangSmith tracing project named "openwiki" (optional).
 
 These configuration options and secrets will be saved to `~/.openwiki/.env` on your local machine.
+
+### Obsidian mode
+
+`openwiki obsidian [--init|--update] [message]` runs OpenWiki against a wiki stored directly inside a local Obsidian vault, instead of a git repository (`code` mode) or the local personal-brain wiki (`personal` mode).
+
+The vault directory defaults to `~/.openwiki/vault`. Override it with the `OPENWIKI_OBSIDIAN_VAULT` environment variable (a leading `~` is expanded), for example:
+
+```sh
+export OPENWIKI_OBSIDIAN_VAULT=~/Documents/MyVault
+openwiki obsidian --init
+```
+
+The first `openwiki obsidian` run idempotently seeds the vault: it creates the vault directory if it does not exist, adds a minimal `.obsidian/app.json` so Obsidian recognizes the folder as a vault, and writes a default `INSTRUCTIONS.md` with a starter wiki brief. Neither seeded file is ever overwritten once present, so you can freely edit `INSTRUCTIONS.md` to steer what OpenWiki tracks and how it organizes pages.
+
+Every run prints a clickable link back to the vault:
+
+```
+Open in Obsidian: obsidian://open?path=%2FUsers%2Fyou%2F.openwiki%2Fvault
+```
+
+Obsidian mode has a two-way contract with edits you make in the app. On every run, OpenWiki records a per-file content hash for the vault in `.last-update.json` (its `vaultFileHashes` map). On the next `--update`, it diffs that manifest against the vault's current contents to detect notes you added, edited, or deleted directly in Obsidian since the last run. These manual edits are treated as authoritative: OpenWiki folds them into its context for the run and never reverts them. To keep this contract simple, OpenWiki refuses to write anywhere under the vault's `.obsidian/` directory, so it never touches your Obsidian app settings.
 
 ## Local Connectors
 
