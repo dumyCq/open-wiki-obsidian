@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -186,5 +186,48 @@ describe("OpenWiki onboarding completion", () => {
         wikiGoal: "Track projects and commitments.",
       }),
     ).toBe(false);
+  });
+
+  test("obsidian mode does not require an ingestion schedule", async () => {
+    const home = await createTempHome();
+    const onboarding = await loadOnboardingModule(home);
+
+    expect(
+      onboarding.isOnboardingComplete({
+        completedAt: "2026-07-18T00:00:00.000Z",
+        modeId: "obsidian",
+        sourceInstances: [],
+        sources: {},
+        version: 1,
+        wikiGoal: "Track research",
+      }),
+    ).toBe(true);
+  });
+
+  test("isObsidianVaultOnboardingCompleteSync requires vault INSTRUCTIONS.md", async () => {
+    const home = await createTempHome();
+    const vaultDir = path.join(home, "vault");
+    await mkdir(vaultDir, { recursive: true });
+    const onboarding = await loadOnboardingModule(home);
+
+    await onboarding.saveOpenWikiOnboardingConfig({
+      completedAt: "2026-07-18T00:00:00.000Z",
+      modeId: "obsidian",
+      modeName: "Obsidian",
+      templateId: "obsidian",
+      templateName: "Obsidian",
+      sourceInstances: [],
+      sources: {},
+      version: 1,
+    });
+
+    expect(onboarding.isObsidianVaultOnboardingCompleteSync(vaultDir)).toBe(
+      false,
+    );
+
+    await onboarding.saveVaultWikiInstructions(vaultDir, "Track research");
+    expect(onboarding.isObsidianVaultOnboardingCompleteSync(vaultDir)).toBe(
+      true,
+    );
   });
 });

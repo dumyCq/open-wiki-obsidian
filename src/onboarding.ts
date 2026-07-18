@@ -218,7 +218,9 @@ export function isOnboardingComplete(
   return Boolean(
     config.completedAt &&
     config.wikiGoal &&
-    (isCodeModeConfig(config) || config.ingestionSchedule),
+    (isCodeModeConfig(config) ||
+      isObsidianModeConfig(config) ||
+      config.ingestionSchedule),
   );
 }
 
@@ -259,6 +261,30 @@ export function isRepositoryCodeOnboardingCompleteSync(
     return isOnboardingComplete({
       ...config,
       wikiGoal,
+    });
+  } catch {
+    return false;
+  }
+}
+
+export function isObsidianVaultOnboardingCompleteSync(
+  vaultDir: string,
+): boolean {
+  if (!existsSync(openWikiOnboardingPath)) {
+    return false;
+  }
+
+  try {
+    const config = normalizeOnboardingConfig(
+      JSON.parse(readFileSync(openWikiOnboardingPath, "utf8")),
+    );
+    if (!isObsidianModeConfig(config)) {
+      return false;
+    }
+
+    return isOnboardingComplete({
+      ...config,
+      wikiGoal: readVaultWikiInstructionsSync(vaultDir),
     });
   } catch {
     return false;
@@ -408,6 +434,10 @@ function normalizeOnboardingConfig(value: unknown): OpenWikiOnboardingConfig {
 
 function isCodeModeConfig(config: OpenWikiOnboardingConfig): boolean {
   return (config.modeId ?? config.templateId) === "code";
+}
+
+function isObsidianModeConfig(config: OpenWikiOnboardingConfig): boolean {
+  return (config.modeId ?? config.templateId) === "obsidian";
 }
 
 function normalizeSourceConfig(

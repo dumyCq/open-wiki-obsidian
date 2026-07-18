@@ -29,6 +29,7 @@ import {
   OPENWIKI_GOOGLE_CLIENT_ID_ENV_KEY,
   OPENWIKI_GOOGLE_CLIENT_SECRET_ENV_KEY,
   OPENWIKI_MODEL_ID_ENV_KEY,
+  OPENWIKI_OBSIDIAN_VAULT_ENV_KEY,
   OPENWIKI_PROVIDER_ENV_KEY,
   OPENWIKI_TAVILY_API_KEY_ENV_KEY,
   OPENWIKI_X_CLIENT_ID_ENV_KEY,
@@ -56,16 +57,24 @@ import { getConnectorConfigPath } from "./openwiki-home.js";
 import { openWikiEnvPath, saveOpenWikiEnv } from "./env.js";
 import {
   createEmptyOnboardingConfig,
+  isObsidianVaultOnboardingCompleteSync,
   isOpenWikiOnboardingCompleteSync,
   isOnboardingComplete,
   isRepositoryCodeOnboardingCompleteSync,
   openWikiOnboardingPath,
   readOpenWikiOnboardingConfig,
   readRepositoryWikiInstructions,
+  readVaultWikiInstructions,
   saveRepositoryWikiInstructions,
   saveOpenWikiOnboardingConfig,
+  saveVaultWikiInstructions,
   type OpenWikiOnboardingConfig,
 } from "./onboarding.js";
+import {
+  DEFAULT_OBSIDIAN_INSTRUCTIONS,
+  ensureObsidianVaultSetup,
+  getObsidianVaultDir,
+} from "./obsidian-mode.js";
 import {
   getSuggestedCronExpression,
   installOpenWikiPowerSchedule,
@@ -111,6 +120,8 @@ type PromptStep =
   | "langsmith"
   | "model"
   | "oauth-login"
+  | "obsidian-vault-confirm"
+  | "obsidian-vault-path"
   | "provider"
   | "region"
   | "run-mode"
@@ -218,6 +229,16 @@ const ONBOARDING_TEMPLATES = [
     suggestedGoal:
       "Your personal brain. Track active projects, people, organizations, decisions, commitments, follow-ups, useful links, recurring themes, and fresh external signals. Organize the wiki so a personal assistant can answer what changed, what matters, what needs attention, and where supporting evidence came from. Be selective: summarize durable context and explicit action items, not every raw item.",
   },
+  {
+    description:
+      "A knowledge wiki stored in an Obsidian vault. OpenWiki organizes and maintains it; you read and edit it in Obsidian, and your edits are respected on the next run.",
+    id: "obsidian",
+    name: "Obsidian",
+    sourceIds: [],
+    suggestedSources: [],
+    suggestedGoal:
+      "A curated knowledge wiki in my Obsidian vault. Organize durable knowledge into focused topic pages with a clear quickstart entrypoint. Treat notes I add or edit in Obsidian as authoritative: fold them into the right pages, keep navigation current, and never revert my changes.",
+  },
 ] as const satisfies readonly OnboardingMode[];
 
 const RUN_MODE_OPTIONS = [
@@ -232,6 +253,12 @@ const RUN_MODE_OPTIONS = [
       "Build repository documentation in ./openwiki for this codebase.",
     id: "code",
     name: "Code",
+  },
+  {
+    description:
+      "Build a knowledge wiki inside an Obsidian vault (default ~/.openwiki/vault). Two-way: your Obsidian edits are respected.",
+    id: "obsidian",
+    name: "Obsidian",
   },
 ] as const satisfies readonly {
   description: string;
@@ -367,6 +394,7 @@ const SOURCE_CONTINUE_OPTIONS = [
 ] as const;
 const FINAL_OPTIONS = ["Run ingestion now", "Run later"] as const;
 const CODE_REPO_OPTIONS = ["Confirm and continue", "Edit path"] as const;
+const OBSIDIAN_VAULT_OPTIONS = ["Confirm and continue", "Edit path"] as const;
 
 export function needsCredentialSetup(
   modelIdOverride: string | null = null,
@@ -388,9 +416,17 @@ export function needsCredentialSetup(
     return true;
   }
 
-  return mode === "code"
-    ? !isRepositoryCodeOnboardingCompleteSync(getDefaultCodeRepoRootPath())
-    : !isOpenWikiOnboardingCompleteSync();
+  if (mode === "code") {
+    return !isRepositoryCodeOnboardingCompleteSync(
+      getDefaultCodeRepoRootPath(),
+    );
+  }
+
+  if (mode === "obsidian") {
+    return !isObsidianVaultOnboardingCompleteSync(getObsidianVaultDir());
+  }
+
+  return !isOpenWikiOnboardingCompleteSync();
 }
 
 /**
@@ -593,6 +629,8 @@ export function InitSetup({
     getDefaultCodeRepoRootPath(),
   );
   const [codeRepoConfirmed, setCodeRepoConfirmed] = useState(false);
+  const [vaultSelectionIndex, setVaultSelectionIndex] = useState(0);
+  const [vaultRoot, setVaultRoot] = useState(() => getObsidianVaultDir());
   const [isCustomModelInput, setIsCustomModelInput] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -641,7 +679,10 @@ export function InitSetup({
         if (configForMode !== config) {
           await saveOpenWikiOnboardingConfig({
             ...configForMode,
-            wikiGoal: mode === "code" ? undefined : configForMode.wikiGoal,
+            wikiGoal:
+              mode === "code" || mode === "obsidian"
+                ? undefined
+                : configForMode.wikiGoal,
           });
         }
         setOnboardingConfig(configForMode);
@@ -695,6 +736,10 @@ export function InitSetup({
         if (initialStep === "code-repo-confirm") {
           setCodeRepoRoot(defaultRepoRoot);
           setCodeRepoSelectionIndex(0);
+        }
+        if (initialStep === "obsidian-vault-confirm") {
+          setVaultRoot(getObsidianVaultDir());
+          setVaultSelectionIndex(0);
         }
         setStep(initialStep);
       })
@@ -905,6 +950,19 @@ export function InitSetup({
       return;
     }
 
+    if (step === "obsidian-vault-confirm") {
+      handleMenuInput(key, () =>
+        setVaultSelectionIndex((index) =>
+          moveSelectionIndex(
+            index,
+            key.upArrow ? -1 : 1,
+            OBSIDIAN_VAULT_OPTIONS.length,
+          ),
+        ),
+      );
+      return;
+    }
+
     if (step === "source-menu") {
       handleMenuInput(key, () =>
         setSourceSelectionIndex((index) =>
@@ -1024,7 +1082,7 @@ export function InitSetup({
       return;
     }
 
-    if (step === "code-repo-path") {
+    if (step === "code-repo-path" || step === "obsidian-vault-path") {
       if (key.return) {
         void submit();
         return;
@@ -1145,6 +1203,31 @@ export function InitSetup({
         setCodeRepoConfirmed(true);
         setInput("");
         continueAfterCodeRepoConfirmed(repoRoot);
+      } catch (pathError) {
+        setError(getErrorMessage(pathError));
+      }
+      return;
+    }
+
+    if (step === "obsidian-vault-confirm") {
+      const selectedOption =
+        OBSIDIAN_VAULT_OPTIONS[vaultSelectionIndex] ??
+        OBSIDIAN_VAULT_OPTIONS[0];
+
+      if (selectedOption === "Edit path") {
+        setInput(vaultRoot);
+        setStep("obsidian-vault-path");
+        return;
+      }
+
+      await confirmVaultRoot(vaultRoot);
+      return;
+    }
+
+    if (step === "obsidian-vault-path") {
+      try {
+        await confirmVaultRoot(normalizeLocalPath(input));
+        setInput("");
       } catch (pathError) {
         setError(getErrorMessage(pathError));
       }
@@ -1535,6 +1618,11 @@ export function InitSetup({
         return;
       }
 
+      if (isObsidianModeSelected(nextConfig)) {
+        await finishObsidianSetup(nextConfig);
+        return;
+      }
+
       setCronModeSelectionIndex(0);
       setCronFieldSelectionIndex(0);
       setCronReplaceCurrentField(true);
@@ -1835,6 +1923,18 @@ export function InitSetup({
       return;
     }
 
+    if (options.runMode === "obsidian") {
+      if (!isOnboardingComplete(onboardingConfig)) {
+        setVaultRoot(getObsidianVaultDir());
+        setVaultSelectionIndex(0);
+        setStep("obsidian-vault-confirm");
+        return;
+      }
+
+      await completeSetup(options);
+      return;
+    }
+
     if (!getConfigModeId(onboardingConfig)) {
       setStep("template");
       return;
@@ -1869,6 +1969,54 @@ export function InitSetup({
 
     setCodeRepoRoot(repoRoot);
     setStep("final");
+  }
+
+  async function confirmVaultRoot(nextVaultRoot: string) {
+    if (nextVaultRoot.trim().length === 0) {
+      setError("Enter a vault directory.");
+      return;
+    }
+
+    await ensureObsidianVaultSetup(nextVaultRoot);
+    await saveOpenWikiEnv({
+      [OPENWIKI_OBSIDIAN_VAULT_ENV_KEY]: nextVaultRoot,
+    });
+    setVaultRoot(nextVaultRoot);
+
+    const existingGoal = await readVaultWikiInstructions(nextVaultRoot);
+    if (
+      !existingGoal ||
+      existingGoal === DEFAULT_OBSIDIAN_INSTRUCTIONS.trim()
+    ) {
+      setInput(getTemplateGoal("obsidian"));
+      setStep("wiki-goal");
+      return;
+    }
+
+    await finishObsidianSetup();
+  }
+
+  async function finishObsidianSetup(
+    config: OpenWikiOnboardingConfig = onboardingConfig,
+  ) {
+    const nextConfig = {
+      ...config,
+      completedAt: new Date().toISOString(),
+    };
+    await saveConfigForCurrentMode(nextConfig);
+    await completeSetup({
+      nextApiKey: apiKey,
+      nextBaseUrl: baseUrl,
+      nextSecretKey: secretKey,
+      nextRegion: region,
+      nextGcpLocation: gcpLocation,
+      nextGcpProject: gcpProject,
+      nextLangSmithKey: langSmithKey,
+      nextModelId: modelId,
+      nextOAuthTokens: oauthTokens,
+      nextProvider: provider,
+      runMode: "obsidian",
+    });
   }
 
   async function completeSetup(options: CompleteSetupOptions) {
@@ -2196,6 +2344,25 @@ export function InitSetup({
   }
 
   async function saveConfigForCurrentMode(config: OpenWikiOnboardingConfig) {
+    if (isObsidianModeSelected(config)) {
+      setIsSaving(true);
+      try {
+        if (config.wikiGoal?.trim()) {
+          await saveVaultWikiInstructions(vaultRoot, config.wikiGoal);
+        }
+        await saveOpenWikiOnboardingConfig({
+          ...config,
+          wikiGoal: undefined,
+        });
+        setOnboardingConfig(config);
+      } catch (saveError) {
+        onError(getErrorMessage(saveError));
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+
     if (!isCodeMode(config)) {
       await saveConfig(config);
       return;
@@ -2430,9 +2597,11 @@ export function InitSetup({
           detail={
             selectedMode === "code"
               ? "repository openwiki/"
-              : onboardingConfig.wikiGoal
-                ? "saved"
-                : `save onboarding profile to ${openWikiOnboardingPath}`
+              : selectedMode === "obsidian"
+                ? `vault ${vaultRoot}`
+                : onboardingConfig.wikiGoal
+                  ? "saved"
+                  : `save onboarding profile to ${openWikiOnboardingPath}`
           }
         />
         {selectedMode === "personal" ? (
@@ -2508,6 +2677,8 @@ export function InitSetup({
               suggestedCronDescription={suggestedCronDescription}
               suggestedCronExpression={suggestedCronExpression}
               templateSelectionIndex={templateSelectionIndex}
+              vaultRoot={vaultRoot}
+              vaultSelectionIndex={vaultSelectionIndex}
             />
           ) : (
             <Text>Inspecting OpenWiki setup...</Text>
@@ -2574,6 +2745,8 @@ function Prompt({
   suggestedCronDescription,
   suggestedCronExpression,
   templateSelectionIndex,
+  vaultRoot,
+  vaultSelectionIndex,
 }: {
   codeRepoRoot: string;
   codeRepoSelectionIndex: number;
@@ -2601,6 +2774,8 @@ function Prompt({
   suggestedCronDescription: string;
   suggestedCronExpression: string;
   templateSelectionIndex: number;
+  vaultRoot: string;
+  vaultSelectionIndex: number;
 }) {
   if (step === "run-mode") {
     const selectedMode =
@@ -2885,6 +3060,49 @@ function Prompt({
         <Text>Choose the repository directory.</Text>
         <Text color="gray">
           Enter an existing directory. OpenWiki will write openwiki/ there.
+        </Text>
+        <BorderedInput
+          maxDisplayWidth={inputDisplayWidth}
+          marginTop={1}
+          prefix="path="
+          value={input}
+        />
+        <Text color="gray">Press Enter to confirm this path.</Text>
+      </Box>
+    );
+  }
+
+  if (step === "obsidian-vault-confirm") {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Obsidian vault</Text>
+        <Box marginTop={1}>
+          <Text color="cyan">Wiki vault: {vaultRoot}</Text>
+        </Box>
+        <Text color="gray">
+          OpenWiki will create the folder and seed .obsidian so Obsidian opens
+          it as a vault.
+        </Text>
+        <Box flexDirection="column" marginTop={1}>
+          {OBSIDIAN_VAULT_OPTIONS.map((option, index) => (
+            <Text key={option}>
+              <SelectionMarker isSelected={index === vaultSelectionIndex} />{" "}
+              {option}
+            </Text>
+          ))}
+        </Box>
+        <Text color="gray">Use up/down arrows, then press Enter.</Text>
+      </Box>
+    );
+  }
+
+  if (step === "obsidian-vault-path") {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Obsidian vault</Text>
+        <Text color="gray">
+          Enter a directory. OpenWiki will create the folder and seed .obsidian
+          so Obsidian opens it as a vault.
         </Text>
         <BorderedInput
           maxDisplayWidth={inputDisplayWidth}
@@ -3604,6 +3822,10 @@ export function getInitialStep(
     return "code-repo-confirm";
   }
 
+  if (mode === "obsidian" && !isOnboardingComplete(onboardingConfig)) {
+    return "obsidian-vault-confirm";
+  }
+
   if (!getConfigModeId(onboardingConfig)) {
     return "template";
   }
@@ -3612,7 +3834,11 @@ export function getInitialStep(
     return "wiki-goal";
   }
 
-  if (!isCodeMode(onboardingConfig) && !onboardingConfig.ingestionSchedule) {
+  if (
+    !isCodeMode(onboardingConfig) &&
+    !isObsidianModeSelected(onboardingConfig) &&
+    !onboardingConfig.ingestionSchedule
+  ) {
     return "global-cron-mode";
   }
 
@@ -3745,6 +3971,10 @@ function getNextStepAfterRegion(
     return "code-repo-confirm";
   }
 
+  if (mode === "obsidian" && !isOnboardingComplete(onboardingConfig)) {
+    return "obsidian-vault-confirm";
+  }
+
   if (!getConfigModeId(onboardingConfig)) {
     return "template";
   }
@@ -3753,7 +3983,11 @@ function getNextStepAfterRegion(
     return "wiki-goal";
   }
 
-  if (!isCodeMode(onboardingConfig) && !onboardingConfig.ingestionSchedule) {
+  if (
+    !isCodeMode(onboardingConfig) &&
+    !isObsidianModeSelected(onboardingConfig) &&
+    !onboardingConfig.ingestionSchedule
+  ) {
     return "global-cron-mode";
   }
 
@@ -3793,13 +4027,17 @@ async function hydrateRunModeConfig(
   mode: OpenWikiRunMode,
   repoRoot: string,
 ): Promise<OpenWikiOnboardingConfig> {
-  if (mode !== "code") {
-    return config;
+  if (mode === "code") {
+    const wikiGoal = await readRepositoryWikiInstructions(repoRoot);
+    return wikiGoal ? { ...config, wikiGoal } : config;
   }
 
-  const wikiGoal = await readRepositoryWikiInstructions(repoRoot);
+  if (mode === "obsidian") {
+    const wikiGoal = await readVaultWikiInstructions(getObsidianVaultDir());
+    return wikiGoal ? { ...config, wikiGoal } : config;
+  }
 
-  return wikiGoal ? { ...config, wikiGoal } : config;
+  return config;
 }
 
 function getRunModeSelectionIndex(mode: OpenWikiRunMode): number {
@@ -3829,6 +4067,10 @@ function getConfigModeName(
 
 function isCodeMode(config: OpenWikiOnboardingConfig): boolean {
   return getConfigModeId(config) === "code";
+}
+
+function isObsidianModeSelected(config: OpenWikiOnboardingConfig): boolean {
+  return getConfigModeId(config) === "obsidian";
 }
 
 function needsEnvValue(secretInput: SourceSecretInput): boolean {
