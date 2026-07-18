@@ -36,7 +36,7 @@ describe("createSystemPrompt filesystem path guidance", () => {
     }
   });
 
-  test("both modes forbid typing host/tilde paths into filesystem tools", () => {
+  test("all output modes forbid typing host/tilde paths into filesystem tools", () => {
     for (const outputMode of ["repository", "local-wiki", "obsidian-vault"] as const) {
       const prompt = createSystemPrompt("update", outputMode);
       expect(prompt).toMatch(

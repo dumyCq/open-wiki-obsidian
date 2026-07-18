@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { OPENWIKI_OBSIDIAN_VAULT_ENV_KEY } from "./constants.js";
+import { isFileExistsError } from "./fs-errors.js";
 
 export type ObsidianVaultSetupResult = {
   vaultDir: string;
@@ -40,24 +41,32 @@ export function createObsidianVaultUri(vaultDir: string): string {
 export async function ensureObsidianVaultSetup(
   vaultDir = getObsidianVaultDir(),
 ): Promise<ObsidianVaultSetupResult> {
-  const createdVault = await mkdirIfMissing(vaultDir);
-  await mkdir(path.join(vaultDir, ".obsidian"), { recursive: true });
-  const seededConfig = await writeIfMissing(
-    path.join(vaultDir, ".obsidian", "app.json"),
-    "{}\n",
-  );
-  const seededInstructions = await writeIfMissing(
-    path.join(vaultDir, "INSTRUCTIONS.md"),
-    DEFAULT_OBSIDIAN_INSTRUCTIONS,
-  );
+  try {
+    const createdVault = await mkdirIfMissing(vaultDir);
+    await mkdir(path.join(vaultDir, ".obsidian"), { recursive: true });
+    const seededConfig = await writeIfMissing(
+      path.join(vaultDir, ".obsidian", "app.json"),
+      "{}\n",
+    );
+    const seededInstructions = await writeIfMissing(
+      path.join(vaultDir, "INSTRUCTIONS.md"),
+      DEFAULT_OBSIDIAN_INSTRUCTIONS,
+    );
 
-  return {
-    vaultDir,
-    obsidianUri: createObsidianVaultUri(vaultDir),
-    createdVault,
-    seededConfig,
-    seededInstructions,
-  };
+    return {
+      vaultDir,
+      obsidianUri: createObsidianVaultUri(vaultDir),
+      createdVault,
+      seededConfig,
+      seededInstructions,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Unable to prepare the Obsidian vault at ${vaultDir}. Set ${OPENWIKI_OBSIDIAN_VAULT_ENV_KEY} to a writable directory. (${message})`,
+      { cause: error },
+    );
+  }
 }
 
 function expandHomePath(value: string): string {
@@ -91,12 +100,4 @@ async function writeIfMissing(
 
     throw error;
   }
-}
-
-function isFileExistsError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "EEXIST"
-  );
 }

@@ -97,4 +97,45 @@ describe("ensureObsidianVaultSetup", () => {
       "My goal\n",
     );
   });
+
+  test("partial seed: keeps existing INSTRUCTIONS.md and only seeds missing config", async () => {
+    const { ensureObsidianVaultSetup } = await importObsidianMode();
+    const vaultDir = path.join(tempHome, "partial-vault");
+    await mkdir(vaultDir, { recursive: true });
+    await writeFile(
+      path.join(vaultDir, "INSTRUCTIONS.md"),
+      "My existing goal\n",
+      "utf8",
+    );
+
+    const result = await ensureObsidianVaultSetup(vaultDir);
+
+    expect(result).toMatchObject({
+      createdVault: false,
+      seededConfig: true,
+      seededInstructions: false,
+    });
+    expect(await readFile(path.join(vaultDir, "INSTRUCTIONS.md"), "utf8")).toBe(
+      "My existing goal\n",
+    );
+    expect(
+      JSON.parse(
+        await readFile(path.join(vaultDir, ".obsidian", "app.json"), "utf8"),
+      ),
+    ).toEqual({});
+  });
+
+  test("wraps fs errors in a friendly message when the vault path cannot be prepared", async () => {
+    const { ensureObsidianVaultSetup } = await importObsidianMode();
+    const blockerFile = path.join(tempHome, "blocker-file");
+    await writeFile(blockerFile, "not a directory", "utf8");
+    const vaultDir = path.join(blockerFile, "vault");
+
+    await expect(ensureObsidianVaultSetup(vaultDir)).rejects.toThrow(
+      /Unable to prepare the Obsidian vault/,
+    );
+    await expect(ensureObsidianVaultSetup(vaultDir)).rejects.toThrow(
+      /OPENWIKI_OBSIDIAN_VAULT/,
+    );
+  });
 });

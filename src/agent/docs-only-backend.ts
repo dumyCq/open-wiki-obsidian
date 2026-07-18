@@ -54,17 +54,17 @@ export class OpenWikiLocalShellBackend extends LocalShellBackend {
   }
 
   private getDocsOnlyWriteError(filePath: string): string | null {
-    if (!this.docsOnly) {
-      return null;
-    }
-
     if (this.outputMode === "obsidian-vault") {
       return isObsidianConfigPath(filePath)
         ? `OpenWiki must not modify Obsidian settings under /.obsidian/. Refused path: ${filePath}`
         : null;
     }
 
-    if (this.outputMode === "local-wiki" || isOpenWikiDocsPath(filePath)) {
+    if (
+      !this.docsOnly ||
+      this.outputMode === "local-wiki" ||
+      isOpenWikiDocsPath(filePath)
+    ) {
       return null;
     }
 

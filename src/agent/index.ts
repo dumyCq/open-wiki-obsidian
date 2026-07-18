@@ -305,6 +305,13 @@ async function runOpenWikiAgentCore(
     // Persist metadata even when the stream fails late, so content that was
     // already generated stays diffable by future updates. Persistence errors
     // are swallowed here so the original run error propagates.
+    //
+    // In obsidian-vault mode this also baselines vaultFileHashes against
+    // whatever is on disk right now, including any human edits the agent may
+    // not have finished processing before the failure. That is an accepted
+    // trade-off mirroring repository-mode's partial-progress baselining: a
+    // retry diffs from this partial state instead of re-reporting the same
+    // manual edits as new every time.
     try {
       const metadataWritten = await persistRunMetadataIfChanged(
         command,

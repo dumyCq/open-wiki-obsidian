@@ -195,15 +195,57 @@ export async function persistRunMetadataIfChanged(
     return false;
   }
 
-  if (
-    snapshotBefore === (await createOpenWikiContentSnapshot(cwd, outputMode))
-  ) {
-    return false;
+  const contentUnchanged =
+    snapshotBefore === (await createOpenWikiContentSnapshot(cwd, outputMode));
+
+  if (contentUnchanged) {
+    if (outputMode !== "obsidian-vault") {
+      return false;
+    }
+
+    // Even when the run wrote no wiki content (e.g. an update run that
+    // correctly determined a human's manual Obsidian edits needed no agent
+    // changes), the vault manifest still needs to be refreshed. Otherwise the
+    // same manual edits are reported as new on every subsequent run and the
+    // loop never converges.
+    const [lastUpdate, currentVaultFileHashes] = await Promise.all([
+      readLastUpdate(cwd, outputMode),
+      computeVaultFileHashes(cwd),
+    ]);
+
+    if (
+      areVaultFileHashesEqual(
+        lastUpdate?.vaultFileHashes,
+        currentVaultFileHashes,
+      )
+    ) {
+      return false;
+    }
   }
 
   await writeLastUpdateMetadata(command, cwd, modelId, outputMode);
 
   return true;
+}
+
+/**
+ * Explicit key/value comparison (no JSON.stringify ordering assumptions).
+ */
+function areVaultFileHashesEqual(
+  previous: Record<string, string> | undefined,
+  current: Record<string, string>,
+): boolean {
+  if (!previous) {
+    return false;
+  }
+
+  const previousKeys = Object.keys(previous);
+
+  if (previousKeys.length !== Object.keys(current).length) {
+    return false;
+  }
+
+  return previousKeys.every((key) => previous[key] === current[key]);
 }
 
 /**
@@ -356,7 +398,9 @@ async function addDirectoryToVaultHashes(
     throw error;
   }
 
-  for (const entry of entries) {
+  for (const entry of entries.sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )) {
     if (entry.name.startsWith(".")) {
       continue;
     }

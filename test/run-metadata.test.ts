@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -133,5 +134,67 @@ describe("obsidian-vault metadata", () => {
 
     const hashes = context.lastUpdate?.vaultFileHashes;
     expect(hashes?.["quickstart.md"]).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test("consumes vault manifest drift on no-write update runs so manual edits converge", async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), "openwiki-vault-noop-"));
+    tempDirs.push(vault);
+    const notePath = path.join(vault, "quickstart.md");
+    await writeFile(notePath, "original content\n", "utf8");
+
+    await writeLastUpdateMetadata("update", vault, "m", "obsidian-vault");
+
+    // Human edits the note in Obsidian between runs.
+    await writeFile(notePath, "edited by hand\n", "utf8");
+
+    // The snapshot a run starting now would take (agent then writes nothing).
+    const snapshotBefore = await createOpenWikiContentSnapshot(
+      vault,
+      "obsidian-vault",
+    );
+
+    const written = await persistRunMetadataIfChanged(
+      "update",
+      vault,
+      "m",
+      "obsidian-vault",
+      snapshotBefore,
+    );
+
+    expect(written).toBe(true);
+    const metadata = await readMetadata(vault, ".last-update.json");
+    const vaultFileHashes = metadata?.vaultFileHashes as
+      | Record<string, string>
+      | undefined;
+    expect(vaultFileHashes?.["quickstart.md"]).toBe(
+      createHash("sha256").update("edited by hand\n").digest("hex"),
+    );
+  });
+
+  test("skips the no-write update run when the vault manifest already matches", async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), "openwiki-vault-noop-"));
+    tempDirs.push(vault);
+    await writeFile(
+      path.join(vault, "quickstart.md"),
+      "stable content\n",
+      "utf8",
+    );
+
+    await writeLastUpdateMetadata("update", vault, "m", "obsidian-vault");
+
+    const snapshotBefore = await createOpenWikiContentSnapshot(
+      vault,
+      "obsidian-vault",
+    );
+
+    const written = await persistRunMetadataIfChanged(
+      "update",
+      vault,
+      "m",
+      "obsidian-vault",
+      snapshotBefore,
+    );
+
+    expect(written).toBe(false);
   });
 });

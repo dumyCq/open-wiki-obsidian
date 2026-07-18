@@ -32,3 +32,14 @@ export function isExpectedSnapshotRaceError(error: unknown): boolean {
     (error as NodeJS.ErrnoException).code ?? "",
   );
 }
+
+/**
+ * True when the error is a "file already exists" (EEXIST) error.
+ */
+export function isFileExistsError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "EEXIST"
+  );
+}

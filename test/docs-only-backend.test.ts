@@ -125,6 +125,29 @@ describe("OpenWikiLocalShellBackend", () => {
         "OpenWiki must not modify Obsidian settings under /.obsidian/. Refused path: /.obsidian/app.json",
       );
     });
+
+    test("refuses .obsidian writes even for chat-style backends with docsOnly false", async () => {
+      const rootDir = await mkdtemp(
+        path.join(os.tmpdir(), "openwiki-vault-backend-"),
+      );
+      const backend = new OpenWikiLocalShellBackend({
+        docsOnly: false,
+        outputMode: "obsidian-vault",
+        rootDir,
+        virtualMode: true,
+      });
+
+      const refused = await backend.write("/.obsidian/app.json", "{}");
+      expect(refused.error).toBe(
+        "OpenWiki must not modify Obsidian settings under /.obsidian/. Refused path: /.obsidian/app.json",
+      );
+
+      const allowed = await backend.write("/note.md", "hello");
+      expect(allowed.error).toBeUndefined();
+      await expect(
+        readFile(path.join(rootDir, "note.md"), "utf8"),
+      ).resolves.toBe("hello");
+    });
   });
 
   describe("isObsidianConfigPath", () => {
