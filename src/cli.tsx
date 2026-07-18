@@ -11,6 +11,11 @@ import { startNgrokTunnel } from "./auth/ngrok.js";
 import { formatAuthProviderList, runOAuthAuth } from "./auth/oauth.js";
 import { ensureCodeModeRepoSetup } from "./code-mode.js";
 import {
+  createObsidianVaultUri,
+  ensureObsidianVaultSetup,
+  getObsidianVaultDir,
+} from "./obsidian-mode.js";
+import {
   commandEmitsTelemetry,
   helpContent,
   isDevelopmentMode,
@@ -546,7 +551,9 @@ function App({ command }: AppProps) {
     const setupPromise =
       runMode === "code"
         ? ensureCodeModeRepoSetup(runtimeCwd)
-        : Promise.resolve();
+        : runMode === "obsidian"
+          ? ensureObsidianVaultSetup(runtimeCwd).then(() => undefined)
+          : Promise.resolve();
 
     setupPromise
       .then(() =>
@@ -650,6 +657,11 @@ function App({ command }: AppProps) {
 
     if (runState.status === "success" && autoExitOnSuccess) {
       process.exitCode = 0;
+      if (runMode === "obsidian") {
+        process.stdout.write(
+          `\nOpen in Obsidian: ${createObsidianVaultUri(runtimeCwd)}\n`,
+        );
+      }
       app.exit();
       return;
     }
@@ -662,7 +674,7 @@ function App({ command }: AppProps) {
         : 0;
       app.exit();
     }
-  }, [app, autoExitOnSuccess, runState]);
+  }, [app, autoExitOnSuccess, runMode, runState, runtimeCwd]);
 
   if (command.kind === "help") {
     return <HelpView />;
@@ -3941,11 +3953,19 @@ function getRunModeCwd(
   mode: OpenWikiRunMode,
   codeRuntimeCwd = process.cwd(),
 ): string {
-  return mode === "code" ? codeRuntimeCwd : openWikiLocalWikiDir;
+  if (mode === "code") {
+    return codeRuntimeCwd;
+  }
+
+  return mode === "obsidian" ? getObsidianVaultDir() : openWikiLocalWikiDir;
 }
 
 function getRunModeOutputMode(mode: OpenWikiRunMode): OpenWikiOutputMode {
-  return mode === "code" ? "repository" : "local-wiki";
+  if (mode === "code") {
+    return "repository";
+  }
+
+  return mode === "obsidian" ? "obsidian-vault" : "local-wiki";
 }
 
 function shouldAutoExitStartupRun(command: CliCommand): boolean {
@@ -3973,6 +3993,8 @@ async function runPrintCommand(
 
     if (command.mode === "code") {
       await ensureCodeModeRepoSetup(runtimeCwd);
+    } else if (command.mode === "obsidian") {
+      await ensureObsidianVaultSetup(runtimeCwd);
     }
 
     await runOpenWikiAgent(command.command, runtimeCwd, {
@@ -3994,6 +4016,12 @@ async function runPrintCommand(
 
     if (text.length > 0) {
       process.stdout.write(`${text}\n`);
+    }
+
+    if (command.mode === "obsidian") {
+      process.stdout.write(
+        `\nOpen in Obsidian: ${createObsidianVaultUri(runtimeCwd)}\n`,
+      );
     }
 
     process.exitCode = 0;
