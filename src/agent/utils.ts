@@ -153,6 +153,9 @@ export async function writeLastUpdateMetadata(
     command,
     gitHead: outputMode === "repository" ? await getGitHead(cwd) : undefined,
     model: modelId,
+    ...(outputMode === "obsidian-vault"
+      ? { vaultFileHashes: await computeVaultFileHashes(cwd) }
+      : {}),
   };
 
   await mkdir(path.dirname(metadataFile), { recursive: true });
@@ -231,6 +234,9 @@ async function readLastUpdate(
             ? parsedMetadata.gitHead
             : undefined,
         model: parsedMetadata.model,
+        vaultFileHashes: isStringRecord(parsedMetadata.vaultFileHashes)
+          ? parsedMetadata.vaultFileHashes
+          : undefined,
       };
     }
 
@@ -269,7 +275,7 @@ async function addDirectoryToSnapshot(
     left.name.localeCompare(right.name),
   )) {
     const entryPath = path.join(directory, entry.name);
-    const relativePath = path.join(relativeDirectory, entry.name);
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
 
     // Dot entries (.obsidian/, .last-update.json, .git, ...) are runtime or
     // app state, not wiki content; hashing them would make Obsidian workspace
@@ -298,6 +304,124 @@ async function addDirectoryToSnapshot(
     hash.update(fileContent);
     hash.update("\0");
   }
+}
+
+export type VaultEditDiff = {
+  added: string[];
+  modified: string[];
+  deleted: string[];
+};
+
+const MANUAL_EDITS_LIST_CAP = 50;
+
+/**
+ * Hashes every content file in the vault (dot entries excluded at every
+ * level) so the next run can tell which files a human changed in Obsidian.
+ */
+export async function computeVaultFileHashes(
+  vaultRoot: string,
+): Promise<Record<string, string>> {
+  const hashes: Record<string, string> = {};
+  await addDirectoryToVaultHashes(hashes, vaultRoot, "");
+  return hashes;
+}
+
+async function addDirectoryToVaultHashes(
+  hashes: Record<string, string>,
+  directory: string,
+  relativeDirectory: string,
+): Promise<void> {
+  let entries: Dirent[];
+
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (isExpectedSnapshotRaceError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) {
+      continue;
+    }
+
+    const entryPath = path.join(directory, entry.name);
+    const relativePath = path.posix.join(relativeDirectory, entry.name);
+
+    if (entry.isDirectory()) {
+      await addDirectoryToVaultHashes(hashes, entryPath, relativePath);
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const fileContent = await readSnapshotFile(entryPath);
+
+    if (fileContent === null) {
+      continue;
+    }
+
+    hashes[relativePath] = createHash("sha256").update(fileContent).digest("hex");
+  }
+}
+
+export function diffVaultFileHashes(
+  previous: Record<string, string> | undefined,
+  current: Record<string, string>,
+): VaultEditDiff {
+  const previousHashes = previous ?? {};
+  const added: string[] = [];
+  const modified: string[] = [];
+  const deleted: string[] = [];
+
+  for (const [file, hash] of Object.entries(current)) {
+    if (!(file in previousHashes)) {
+      added.push(file);
+    } else if (previousHashes[file] !== hash) {
+      modified.push(file);
+    }
+  }
+
+  for (const file of Object.keys(previousHashes)) {
+    if (!(file in current)) {
+      deleted.push(file);
+    }
+  }
+
+  added.sort();
+  modified.sort();
+  deleted.sort();
+
+  return { added, modified, deleted };
+}
+
+export function formatManualEditsSummary(diff: VaultEditDiff): string {
+  const sections = (
+    [
+      ["Added", diff.added],
+      ["Modified", diff.modified],
+      ["Deleted", diff.deleted],
+    ] as const
+  )
+    .filter(([, files]) => files.length > 0)
+    .map(([label, files]) => {
+      const listed = files
+        .slice(0, MANUAL_EDITS_LIST_CAP)
+        .map((file) => `- ${file}`);
+      if (files.length > MANUAL_EDITS_LIST_CAP) {
+        listed.push(`- ...and ${files.length - MANUAL_EDITS_LIST_CAP} more`);
+      }
+      return `${label}:\n${listed.join("\n")}`;
+    });
+
+  return sections.length > 0
+    ? sections.join("\n\n")
+    : "No manual edits detected since the last OpenWiki run.";
 }
 
 function getWikiContentRoot(
@@ -476,4 +600,13 @@ function isExecError(
   error: unknown,
 ): error is Error & { stdout?: string; stderr?: string } {
   return error instanceof Error && ("stdout" in error || "stderr" in error);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+  );
 }

@@ -1,11 +1,21 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   createOpenWikiContentSnapshot,
+  createRunContext,
   persistRunMetadataIfChanged,
+  writeLastUpdateMetadata,
 } from "../src/agent/utils.ts";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
 
 async function createTempRepo(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), "openwiki-run-metadata-"));
@@ -103,5 +113,25 @@ describe("persistRunMetadataIfChanged", () => {
 
     expect(written).toBe(false);
     expect(await readMetadata(cwd, "openwiki/.last-update.json")).toBeNull();
+  });
+});
+
+describe("obsidian-vault metadata", () => {
+  test("obsidian-vault metadata records and re-reads vaultFileHashes", async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), "openwiki-vault-meta-"));
+    tempDirs.push(vault);
+    await writeFile(path.join(vault, "quickstart.md"), "---\ntype: Guide\n---\n");
+
+    await writeLastUpdateMetadata("update", vault, "test-model", "obsidian-vault");
+
+    const context = await createRunContext("update", vault, "obsidian-vault");
+    expect(context.lastUpdate).not.toBeNull();
+    expect(context.lastUpdate?.vaultFileHashes).toBeDefined();
+    expect(Object.keys(context.lastUpdate?.vaultFileHashes ?? {})).toEqual([
+      "quickstart.md",
+    ]);
+
+    const hashes = context.lastUpdate?.vaultFileHashes;
+    expect(hashes?.["quickstart.md"]).toMatch(/^[0-9a-f]{64}$/);
   });
 });

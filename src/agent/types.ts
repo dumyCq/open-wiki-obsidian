@@ -47,6 +47,7 @@ export type UpdateMetadata = {
   command: OpenWikiCommand;
   gitHead?: string;
   model: string;
+  vaultFileHashes?: Record<string, string>;
 };
 
 export type RunContext = {

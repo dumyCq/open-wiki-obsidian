@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createOpenWikiContentSnapshot } from "../src/agent/utils.ts";
+import {
+  computeVaultFileHashes,
+  createOpenWikiContentSnapshot,
+  diffVaultFileHashes,
+  formatManualEditsSummary,
+} from "../src/agent/utils.ts";
 import { stripHtmlTags } from "../src/utils.ts";
 
 const tempDirs: string[] = [];
@@ -71,5 +76,58 @@ describe("createOpenWikiContentSnapshot dot-entry exclusion", () => {
     expect(
       await createOpenWikiContentSnapshot(vault, "obsidian-vault"),
     ).not.toBe(before);
+  });
+});
+
+describe("vault file hash manifest", () => {
+  test("computeVaultFileHashes hashes content files and skips dot entries", async () => {
+    const vault = await mkdtemp(path.join(tmpdir(), "openwiki-vault-hash-"));
+    tempDirs.push(vault);
+    await writeFile(path.join(vault, "a.md"), "alpha");
+    await mkdir(path.join(vault, "topics"));
+    await writeFile(path.join(vault, "topics", "b.md"), "beta");
+    await mkdir(path.join(vault, ".obsidian"), { recursive: true });
+    await writeFile(path.join(vault, ".obsidian", "app.json"), "{}");
+    await writeFile(path.join(vault, ".last-update.json"), "{}");
+
+    const hashes = await computeVaultFileHashes(vault);
+
+    expect(Object.keys(hashes).sort()).toEqual(["a.md", "topics/b.md"]);
+    expect(hashes["a.md"]).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  test("diffVaultFileHashes classifies added/modified/deleted", () => {
+    const previous = { "a.md": "1", "b.md": "2", "c.md": "3" };
+    const current = { "a.md": "1", "b.md": "changed", "d.md": "4" };
+
+    expect(diffVaultFileHashes(previous, current)).toEqual({
+      added: ["d.md"],
+      modified: ["b.md"],
+      deleted: ["c.md"],
+    });
+  });
+
+  test("diff with no previous manifest reports everything as added", () => {
+    expect(diffVaultFileHashes(undefined, { "a.md": "1" })).toEqual({
+      added: ["a.md"],
+      modified: [],
+      deleted: [],
+    });
+  });
+
+  test("formatManualEditsSummary renders sections and caps at 50", () => {
+    const noEdits = formatManualEditsSummary({ added: [], modified: [], deleted: [] });
+    expect(noEdits).toBe("No manual edits detected since the last OpenWiki run.");
+
+    const many = Array.from({ length: 55 }, (_, i) => `page-${i}.md`);
+    const summary = formatManualEditsSummary({
+      added: ["new.md"],
+      modified: many,
+      deleted: [],
+    });
+    expect(summary).toContain("Added:\n- new.md");
+    expect(summary).toContain("Modified:");
+    expect(summary).toContain("- ...and 5 more");
+    expect(summary).not.toContain("Deleted:");
   });
 });
