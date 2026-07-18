@@ -1,9 +1,7 @@
 import type { BackendProtocolV2, FileInfo } from "deepagents";
-import { createMiddleware } from "langchain";
 import path from "node:path";
 import { parse } from "yaml";
-import { addFrontmatterWarning } from "./frontmatter-validator.js";
-import type { OpenWikiOutputMode } from "./types.js";
+import type { OpenWikiOutputMode } from "../agent/types.js";
 
 const INDEX_FILE = "index.md";
 const LOG_FILE = "log.md";
@@ -14,37 +12,44 @@ const EXCLUDED_FILES = new Set([
   "INSTRUCTIONS.md",
 ]);
 
+/**
+ * A wiki directory paired with the entries it directly contains.
+ */
 interface Directory {
+  /**
+   * All immediate entries (files and subdirectories) listed for the directory.
+   */
   entries: FileInfo[];
+
+  /**
+   * Absolute virtual path of the directory within the wiki.
+   */
   path: string;
 }
+
+/**
+ * A rendered index entry pointing at a file or subdirectory.
+ */
 interface Link {
+  /**
+   * Optional one-line description rendered beside file links.
+   */
   description?: string;
+
+  /**
+   * URL-encoded href relative to the containing index.
+   */
   href: string;
+
+  /**
+   * Human-readable link label.
+   */
   label: string;
 }
 
-/** Creates middleware that synchronizes deterministic wiki indexes after a run. */
-export function createOpenWikiIndexMiddleware(
-  backend: BackendProtocolV2,
-  outputMode: OpenWikiOutputMode,
-) {
-  return createMiddleware({
-    name: "OpenWikiIndexMiddleware",
-    wrapToolCall: async (request, handler) =>
-      addFrontmatterWarning(
-        await handler(request),
-        backend,
-        outputMode,
-        request.toolCall.name,
-      ),
-    afterAgent: async () => {
-      await synchronizeWikiIndexes(backend, outputMode);
-    },
-  });
-}
-
-/** Synchronizes the index for every directory in the configured wiki. */
+/**
+ * Synchronizes the index for every directory in the configured wiki.
+ */
 export async function synchronizeWikiIndexes(
   backend: BackendProtocolV2,
   outputMode: OpenWikiOutputMode,
@@ -55,7 +60,9 @@ export async function synchronizeWikiIndexes(
   }
 }
 
-/** Recursively collects visible wiki directories and their entries. */
+/**
+ * Recursively collects visible wiki directories and their entries.
+ */
 async function collectDirectories(
   backend: BackendProtocolV2,
   directoryPath: string,
@@ -82,7 +89,9 @@ async function collectDirectories(
   return [...descendants.flat(), { entries, path: directoryPath }];
 }
 
-/** Builds and writes one directory's index when its content has changed. */
+/**
+ * Builds and writes one directory's index when its content has changed.
+ */
 async function synchronizeDirectory(
   backend: BackendProtocolV2,
   directory: Directory,
@@ -135,7 +144,9 @@ async function synchronizeDirectory(
   }
 }
 
-/** Renders a complete deterministic index document. */
+/**
+ * Renders a complete deterministic index document.
+ */
 function renderIndex(
   files: Link[],
   directories: Link[],
@@ -151,7 +162,9 @@ function renderIndex(
   return `${version}${sections || "# Files"}\n`;
 }
 
-/** Renders a sorted Markdown section for files or subdirectories. */
+/**
+ * Renders a sorted Markdown section for files or subdirectories.
+ */
 function renderLinks(
   heading: string,
   links: Link[],
@@ -168,7 +181,9 @@ function renderLinks(
   return `# ${heading}\n\n${items.join("\n")}`;
 }
 
-/** Parses usable optional display metadata from YAML front matter. */
+/**
+ * Parses usable optional display metadata from YAML front matter.
+ */
 function parseFrontmatter(
   content: string,
   filePath: string,
@@ -202,18 +217,24 @@ function parseFrontmatter(
   };
 }
 
-/** Returns optional front matter text only when it can be rendered in an index. */
+/**
+ * Returns optional front matter text only when it can be rendered in an index.
+ */
 function usableString(value: unknown): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   return value;
 }
 
-/** Converts an unknown thrown value into a readable message. */
+/**
+ * Converts an unknown thrown value into a readable message.
+ */
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Reads a text file from the backend or throws an actionable error. */
+/**
+ * Reads a text file from the backend or throws an actionable error.
+ */
 async function readText(
   backend: BackendProtocolV2,
   filePath: string,
@@ -224,7 +245,9 @@ async function readText(
   return fileDataToText(result.data?.content, filePath);
 }
 
-/** Converts supported backend file content into text. */
+/**
+ * Converts supported backend file content into text.
+ */
 function fileDataToText(
   content: string | string[] | Uint8Array | undefined,
   filePath: string,
@@ -234,12 +257,16 @@ function fileDataToText(
   throw new Error(`${filePath} is not a text file.`);
 }
 
-/** Extracts an entry's basename from its virtual path. */
+/**
+ * Extracts an entry's basename from its virtual path.
+ */
 function entryName(entry: FileInfo): string {
   return path.posix.basename(entry.path.replace(/\/$/u, ""));
 }
 
-/** Escapes a value for use as a Markdown link label. */
+/**
+ * Escapes a value for use as a Markdown link label.
+ */
 function escapeLabel(value: string): string {
   return value
     .replaceAll("\\", "\\\\")
