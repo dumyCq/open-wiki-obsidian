@@ -37,11 +37,33 @@ describe("createSystemPrompt filesystem path guidance", () => {
   });
 
   test("both modes forbid typing host/tilde paths into filesystem tools", () => {
-    for (const outputMode of ["repository", "local-wiki"] as const) {
+    for (const outputMode of ["repository", "local-wiki", "obsidian-vault"] as const) {
       const prompt = createSystemPrompt("update", outputMode);
       expect(prompt).toMatch(
         /Never type ~, ~\/\.openwiki\/wiki, or host paths/,
       );
     }
+  });
+
+  describe("obsidian-vault mode", () => {
+    for (const command of commands) {
+      test(`${command}: roots the wiki at the Obsidian vault via virtual /`, () => {
+        const prompt = createSystemPrompt(command, "obsidian-vault");
+
+        expect(prompt).not.toMatch(/lives in ~\/\.openwiki\/wiki/);
+        expect(prompt).toContain("Obsidian vault");
+        expect(prompt).toContain("/quickstart.md");
+        expect(prompt).toContain("/.obsidian/");
+        expect(prompt).toMatch(/never revert/i);
+        expect(prompt).toMatch(/\[\[wikilinks?\]\]/i);
+        expect(prompt).not.toContain("/personal-logistics.md");
+        expect(prompt).not.toContain("/commitments.md");
+      });
+    }
+
+    test("update instructions tell the agent to integrate manual edits", () => {
+      const prompt = createSystemPrompt("update", "obsidian-vault");
+      expect(prompt).toContain("Manual edits since last OpenWiki run");
+    });
   });
 });

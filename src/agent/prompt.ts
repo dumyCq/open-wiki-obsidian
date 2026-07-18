@@ -106,6 +106,7 @@ OpenWiki CLI reference:
 - \`openwiki --init [message]\` initializes repository documentation under openwiki/ (code mode).
 - \`openwiki --update [message]\` updates repository documentation under openwiki/ (code mode).
 - \`openwiki personal --init [message]\` initializes the local personal brain wiki under ~/.openwiki/wiki.
+- \`openwiki obsidian [--init|--update] [message]\` runs OpenWiki over the configured Obsidian vault (default ~/.openwiki/vault, override with the OPENWIKI_OBSIDIAN_VAULT environment variable). Manual edits made in Obsidian are detected and incorporated on the next run.
 - \`openwiki code --init [message]\` initializes repository documentation under openwiki/.
 - \`openwiki --mode code --init [message]\` initializes repository documentation under openwiki/.
 - \`openwiki --mode personal --init [message]\` initializes the local personal brain wiki under ~/.openwiki/wiki.
@@ -428,6 +429,50 @@ function getOutputPromptConfig(
         "Do not modify files outside ~/.openwiki/wiki with filesystem tools. The only source data outside this root that may be inspected is connector raw data through constrained connector tools or explicit shell reads requested by the source-specific prompt.",
       writePathExample:
         "/... paths directly under the wiki root, for example /quickstart.md or /sources/gmail.md. Never use /openwiki/... in local wiki mode.",
+    };
+  }
+
+  if (outputMode === "obsidian-vault") {
+    return {
+      canonicalLocationInstruction: `Canonical wiki location:
+- The generated OpenWiki knowledge base lives in the configured Obsidian vault, which the filesystem tools expose as the virtual root /. Reference wiki files by /-rooted virtual paths such as /quickstart.md and /topics/ai-research.md.
+- Never type ~, ~/.openwiki/wiki, or host paths like /Users/... into filesystem tools (ls, read_file, write_file, edit_file, glob, grep). Those host paths are only valid with shell execute, and only when an explicit instruction requires it.
+- When reading the wiki to answer questions, inspect the vault root / first.`,
+      docsLocation: "the configured Obsidian vault (the current virtual filesystem root /)",
+      filesystemRootInstruction:
+        "Filesystem tools are rooted at the Obsidian vault. Use virtual paths such as /quickstart.md, /topics/ai-research.md, and /_plan.md. Never create, edit, or delete anything under /.obsidian/. Do not create a nested /openwiki directory.",
+      gitDisciplineInstruction:
+        "During vault updates, do not rely on git history for the wiki root. Use the manual-edit summary in the user prompt, existing vault pages, and the vault INSTRUCTIONS.md brief as evidence.",
+      initialHistoryInstruction:
+        "Use file timestamps and existing note content only when directly relevant; the vault has no git history to mine.",
+      initialInventoryInstruction:
+        "First build a knowledge inventory: existing vault notes (all of them are human-authored and authoritative), the /INSTRUCTIONS.md brief, and the major topics the user asked OpenWiki to track.",
+      localWikiSynthesisInstruction: `Obsidian vault discipline:
+- This wiki is stored in a live Obsidian vault that the user reads and edits directly in Obsidian. Human edits are authoritative: incorporate manual changes into related pages, never revert them, and never recreate pages the user deleted unless the wiki brief requires it (then explain why inside the page).
+- Preserve [[wikilinks]], #tags, aliases, and any unknown front matter properties in human-authored or human-edited notes. Do not rewrite [[wikilinks]] into Markdown links. Links you add yourself must be standard relative Markdown links (OKF relationship edges).
+- Human notes may lack OKF front matter. Add the minimal \`type\` front matter only when substantially rewriting such a page; otherwise leave its front matter exactly as found.
+- Never create, edit, or delete anything under /.obsidian/. That directory is Obsidian application state, not wiki content.
+- Organize the vault as a goal-driven knowledge wiki: /quickstart.md is the navigation entrypoint, topic pages live in focused directories, and /INSTRUCTIONS.md (user-authored brief) defines scope and priorities.`,
+      metadataPath: "/.last-update.json",
+      planPath: "/_plan.md",
+      quickstartPath: "/quickstart.md",
+      removePlanCommand: "rm -f ./_plan.md",
+      rootAgentInstructions:
+        "Root agent instruction files:\n- Obsidian vault mode does not manage repository /AGENTS.md or /CLAUDE.md files.\n- /INSTRUCTIONS.md is the user-authored OpenWiki brief for this vault. Read it to understand scope and priorities, but do not edit it unless the user explicitly asks to change the brief.",
+      searchBoundaryInstruction:
+        "Do not run commands that search outside the Obsidian vault unless an explicit instruction names another path to inspect.",
+      sectionDirectoryInstruction:
+        "When the vault is large enough to need section directories, create one directory per major topic area, for example topics/, projects/, people/, research/, or similar names that fit the user's goals.",
+      subjectLabel: "the Obsidian vault knowledge wiki",
+      updateEvidenceInstruction:
+        "Use the 'Manual edits since last OpenWiki run' section of the user prompt as the primary change evidence. Read each added or modified note, integrate its content into related pages, and honor deletions. Human edits are authoritative: never revert them.",
+      wikiFirstAnsweringInstruction: `Wiki-first question answering:
+- For ordinary chat questions, inspect the vault under the virtual root / first. Use quickstart/index pages, topic pages, and targeted grep/glob over the vault before anything else.
+- If the user asks you to "look at the wiki", answer "based on the wiki", or frames the request around the vault, use only vault pages unless they cannot support the answer.`,
+      writeBoundaryInstruction:
+        "Do not modify files outside the Obsidian vault with filesystem tools, and never write under /.obsidian/.",
+      writePathExample:
+        "/... paths directly under the vault root, for example /quickstart.md or /topics/ai-research.md. Never use /openwiki/... in Obsidian vault mode.",
     };
   }
 

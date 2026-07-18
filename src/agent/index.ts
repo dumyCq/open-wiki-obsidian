@@ -390,12 +390,22 @@ Runtime note:
 }
 
 function formatRuntimeRootLabel(outputMode: OpenWikiOutputMode): string {
-  return outputMode === "local-wiki" ? "Local wiki root" : "Repository root";
+  if (outputMode === "local-wiki") {
+    return "Local wiki root";
+  }
+
+  return outputMode === "obsidian-vault"
+    ? "Obsidian vault root"
+    : "Repository root";
 }
 
 function formatRuntimeRootInstruction(outputMode: OpenWikiOutputMode): string {
   if (outputMode === "local-wiki") {
     return "Filesystem tools use a virtual root: / means the local wiki directory above. Write wiki pages directly under /, for example /quickstart.md, /sources/gmail.md, and /_plan.md. Do not create a nested /openwiki directory.";
+  }
+
+  if (outputMode === "obsidian-vault") {
+    return "Filesystem tools use a virtual root: / means the Obsidian vault directory above. Write wiki pages directly under /, for example /quickstart.md, /topics/ai-research.md, and /_plan.md. Never create, edit, or delete anything under /.obsidian/. Do not create a nested /openwiki directory.";
   }
 
   return "Treat the repository root above as source evidence only. The canonical generated wiki is ~/.openwiki/wiki, not a repository-local openwiki/ directory. Filesystem tools use a virtual root: / means the repository root for source inspection paths such as /README.md, /agent/agents/main.py, and /package.json.";
