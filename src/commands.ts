@@ -9,7 +9,7 @@ export type HelpRow = {
   description: string;
 };
 
-export type OpenWikiRunMode = "personal" | "code";
+export type OpenWikiRunMode = "personal" | "code" | "obsidian";
 type CronTarget = Extract<IngestionTarget, string>;
 
 export type HelpContent = {
@@ -391,7 +391,7 @@ function parseRunCommand(
         return {
           kind: "error",
           exitCode: 1,
-          message: "--mode requires personal or code.",
+          message: "--mode requires personal, code, or obsidian.",
         };
       }
 
@@ -399,7 +399,7 @@ function parseRunCommand(
         return {
           kind: "error",
           exitCode: 1,
-          message: `Invalid mode: ${nextArg}. Expected personal or code.`,
+          message: `Invalid mode: ${nextArg}. Expected personal, code, or obsidian.`,
         };
       }
 
@@ -421,7 +421,7 @@ function parseRunCommand(
         return {
           kind: "error",
           exitCode: 1,
-          message: `Invalid mode: ${rawMode}. Expected personal or code.`,
+          message: `Invalid mode: ${rawMode}. Expected personal, code, or obsidian.`,
         };
       }
 
@@ -585,7 +585,7 @@ function resolveExplicitMode(
 function isOpenWikiRunMode(
   value: string | undefined,
 ): value is OpenWikiRunMode {
-  return value === "personal" || value === "code";
+  return value === "personal" || value === "code" || value === "obsidian";
 }
 
 /**
@@ -633,7 +633,8 @@ export const helpContent: HelpContent = {
     "openwiki [--init|--update] [message]",
     "openwiki code [--init|--update] [message]",
     "openwiki personal [--init|--update] [message]",
-    "openwiki --mode <personal|code> [--init|--update] [message]",
+    "openwiki obsidian [--init|--update] [message]",
+    "openwiki --mode <personal|code|obsidian> [--init|--update] [message]",
     "openwiki [--modelId <model>]",
     "openwiki [--modelId <model>] [message]",
     "openwiki --update [message]",
@@ -657,6 +658,11 @@ export const helpContent: HelpContent = {
       label: "openwiki personal",
       description:
         "Run OpenWiki as your local personal brain over configured sources, writing to ~/.openwiki/wiki.",
+    },
+    {
+      label: "openwiki obsidian",
+      description:
+        "Run OpenWiki over an Obsidian vault (default ~/.openwiki/vault, override with OPENWIKI_OBSIDIAN_VAULT). Edits made in Obsidian are detected and respected on the next run.",
     },
     {
       label: "openwiki",
@@ -719,9 +725,9 @@ export const helpContent: HelpContent = {
         "Update existing OpenWiki documentation. Defaults to code mode; use personal to update the local personal brain.",
     },
     {
-      label: "--mode <personal|code>",
+      label: "--mode <personal|code|obsidian>",
       description:
-        "Choose the personal brain (local, over configured sources) or the code brain (repository docs).",
+        "Choose the personal brain (local, over configured sources), the code brain (repository docs), or the Obsidian vault wiki.",
     },
     {
       label: "-p, --print",
@@ -747,9 +753,11 @@ export const helpContent: HelpContent = {
     "openwiki",
     "openwiki --init",
     "openwiki personal --init",
+    "openwiki obsidian --init",
     "openwiki code --init",
     "openwiki --update",
     "openwiki --update --mode personal",
+    'openwiki obsidian --update "Fold in my manual notes"',
     'openwiki "What can you do?"',
     'openwiki -p "Summarize what OpenWiki can do"',
     "openwiki --modelId gpt-5.5",

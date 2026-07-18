@@ -418,3 +418,66 @@ describe("parseCommand — cron", () => {
     expect(result.kind).toBe("error");
   });
 });
+
+describe("obsidian mode parsing", () => {
+  test("positional obsidian keyword selects obsidian mode", () => {
+    expect(parseCommand(["obsidian"])).toMatchObject({
+      kind: "run",
+      command: "chat",
+      mode: "obsidian",
+      modeSource: "positional",
+      shouldStart: false,
+    });
+  });
+
+  test("obsidian --init runs init in obsidian mode", () => {
+    expect(parseCommand(["obsidian", "--init"])).toMatchObject({
+      kind: "run",
+      command: "init",
+      mode: "obsidian",
+      modeSource: "positional",
+      shouldStart: true,
+    });
+  });
+
+  test("--mode obsidian selects obsidian mode", () => {
+    expect(parseCommand(["--update", "--mode", "obsidian"])).toMatchObject({
+      kind: "run",
+      command: "update",
+      mode: "obsidian",
+      modeSource: "option",
+    });
+  });
+
+  test("--mode=obsidian selects obsidian mode", () => {
+    expect(parseCommand(["--mode=obsidian"])).toMatchObject({
+      kind: "run",
+      mode: "obsidian",
+      modeSource: "option",
+    });
+  });
+
+  test("mode word after flags is promoted once", () => {
+    expect(parseCommand(["--print", "obsidian", "--update"])).toMatchObject({
+      kind: "run",
+      command: "update",
+      mode: "obsidian",
+      modeSource: "positional",
+      userMessage: null,
+    });
+  });
+
+  test("conflicting modes error", () => {
+    expect(parseCommand(["obsidian", "--mode", "code"])).toMatchObject({
+      kind: "error",
+      message: "Conflicting modes: obsidian and code.",
+    });
+  });
+
+  test("invalid mode error names all three modes", () => {
+    expect(parseCommand(["--mode", "banana"])).toMatchObject({
+      kind: "error",
+      message: "Invalid mode: banana. Expected personal, code, or obsidian.",
+    });
+  });
+});
