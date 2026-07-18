@@ -271,10 +271,10 @@ async function addDirectoryToSnapshot(
     const entryPath = path.join(directory, entry.name);
     const relativePath = path.join(relativeDirectory, entry.name);
 
-    if (
-      relativePath === path.basename(UPDATE_METADATA_PATH) ||
-      relativePath === LOCAL_WIKI_METADATA_PATH
-    ) {
+    // Dot entries (.obsidian/, .last-update.json, .git, ...) are runtime or
+    // app state, not wiki content; hashing them would make Obsidian workspace
+    // churn look like documentation changes.
+    if (entry.name.startsWith(".")) {
       continue;
     }
 
@@ -304,16 +304,16 @@ function getWikiContentRoot(
   cwd: string,
   outputMode: OpenWikiOutputMode,
 ): string {
-  return outputMode === "local-wiki" ? cwd : path.join(cwd, OPEN_WIKI_DIR);
+  return outputMode === "repository" ? path.join(cwd, OPEN_WIKI_DIR) : cwd;
 }
 
 function getMetadataFilePath(
   cwd: string,
   outputMode: OpenWikiOutputMode,
 ): string {
-  return outputMode === "local-wiki"
-    ? path.join(cwd, LOCAL_WIKI_METADATA_PATH)
-    : path.join(cwd, UPDATE_METADATA_PATH);
+  return outputMode === "repository"
+    ? path.join(cwd, UPDATE_METADATA_PATH)
+    : path.join(cwd, LOCAL_WIKI_METADATA_PATH);
 }
 
 /**
