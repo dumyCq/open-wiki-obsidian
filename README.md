@@ -1,4 +1,11 @@
-# OpenWiki
+# OpenWiki (Obsidian fork)
+
+> **This is `openwiki-obsidian`** — a fork of [langchain-ai/openwiki](https://github.com/langchain-ai/openwiki)
+> adding a third run mode, **`openwiki obsidian`**, that uses an **Obsidian vault as the wiki engine**:
+> the wiki is a live Obsidian vault (graph view, backlinks, sync), and edits you make in Obsidian are
+> detected via a per-file manifest and treated as authoritative by the next run — fully two-way.
+> Install with `npm install -g openwiki-obsidian` (ships the same `openwiki` command).
+> See [Obsidian mode](#obsidian-mode) below; everything else matches upstream.
 
 OpenWiki is a CLI that writes and maintains agent wikis for codebases or purpose memory. It's built specifically for agents, can ingest local knowledge sources through built-in connectors or git repositories and synthesize them into a local wiki.
 
@@ -11,19 +18,19 @@ OpenWiki is a CLI that writes and maintains agent wikis for codebases or purpose
 ## Install
 
 ```sh
-npm install -g openwiki
+npm install -g openwiki-obsidian
 ```
 
 On Windows, prefer installing OpenWiki with Node.js package managers such as
 `npm` or `pnpm`:
 
 ```sh
-npm install -g openwiki
+npm install -g openwiki-obsidian
 # or
-pnpm add -g openwiki
+pnpm add -g openwiki-obsidian
 ```
 
-`bun install -g openwiki` can fall back to compiling OpenWiki's `better-sqlite3`
+`bun install -g openwiki-obsidian` can fall back to compiling OpenWiki's `better-sqlite3`
 checkpointing dependency. Before using that path, install Visual Studio Build
 Tools with the Desktop development with C++ workload. Bun does not run lifecycle
 scripts from installed packages by default, so it cannot display a package-level

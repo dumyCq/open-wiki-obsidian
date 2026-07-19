@@ -1,14 +1,23 @@
 {
-  "name": "openwiki",
-  "version": "0.2.0",
-  "description": "A CLI that uses a DeepAgents documentation agent to generate and maintain an OpenWiki for a codebase.",
+  "name": "openwiki-obsidian",
+  "version": "0.3.0",
+  "description": "OpenWiki fork with an Obsidian vault engine mode: the wiki lives in a two-way Obsidian vault alongside the original code and personal modes.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dumyCq/open-wiki-obsidian.git"
+  },
+  "homepage": "https://github.com/dumyCq/open-wiki-obsidian#readme",
+  "bugs": {
+    "url": "https://github.com/dumyCq/open-wiki-obsidian/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "bin": {
-    "openwiki": "./dist/cli.js"
+    "openwiki": "./dist/cli.js",
+    "openwiki-obsidian": "./dist/cli.js"
   },
   "files": [
     "dist",
