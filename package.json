@@ -16,8 +16,8 @@
     "node": ">=22"
   },
   "bin": {
-    "openwiki": "./dist/cli.js",
-    "openwiki-obsidian": "./dist/cli.js"
+    "openwiki": "dist/cli.js",
+    "openwiki-obsidian": "dist/cli.js"
   },
   "files": [
     "dist",
