@@ -23,14 +23,11 @@ export const OPENWIKI_GENERATED_FIELD = "openwiki_generated";
 const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u;
 
 /**
- * Minimal OKF fields OpenWiki can derive from a page body.
+ * Minimal OKF fields OpenWiki can derive from a page body. Only `type` (the sole
+ * required OKF field) and a `title` are derived; the optional `description` is
+ * left for the agent to supply, since a code-guessed one is usually poor.
  */
 interface DerivedFrontmatter {
-  /**
-   * Optional one-line summary derived from the first prose paragraph.
-   */
-  description?: string;
-
   /**
    * Concept title from the first H1, falling back to the filename.
    */
@@ -234,28 +231,6 @@ function firstHeading(body: string): string | undefined {
 }
 
 /**
- * Returns the first prose paragraph collapsed to one line, skipping leading
- * heading and blank lines. Unlike a blank-line split, this still finds prose
- * that directly follows a heading with no blank line between them.
- */
-function firstParagraph(body: string): string | undefined {
-  const paragraph: string[] = [];
-  for (const raw of body.split(/\r?\n/u)) {
-    const line = raw.trim();
-    if (paragraph.length === 0) {
-      if (!line || line.startsWith("#")) continue;
-      paragraph.push(line);
-    } else {
-      if (!line) break;
-      paragraph.push(line);
-    }
-  }
-  return paragraph.length > 0
-    ? paragraph.join(" ").replace(/\s+/gu, " ")
-    : undefined;
-}
-
-/**
  * Builds a human-readable title from a Markdown filename.
  */
 function titleFromFilename(filePath: string): string {
@@ -271,11 +246,9 @@ export function deriveMinimalFrontmatter(
   body: string,
   filePath: string,
 ): DerivedFrontmatter {
-  const description = firstParagraph(body);
   return {
     type: "Reference",
     title: firstHeading(body) ?? titleFromFilename(filePath),
-    ...(description ? { description } : {}),
   };
 }
 
@@ -290,9 +263,6 @@ export function renderFrontmatter(
     `type: ${JSON.stringify(fields.type)}`,
     `title: ${JSON.stringify(fields.title)}`,
   ];
-  if (fields.description) {
-    lines.push(`description: ${JSON.stringify(fields.description)}`);
-  }
   if (options.generated) lines.push(`${OPENWIKI_GENERATED_FIELD}: true`);
   return `---\n${lines.join("\n")}\n---\n\n`;
 }

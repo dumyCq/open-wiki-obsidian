@@ -19,9 +19,8 @@ describe("normalizeConceptContent", () => {
     expect(result.changed).toBe(true);
     expect(result.content).toContain('type: "Reference"');
     expect(result.content).toContain('title: "Architecture Overview"');
-    expect(result.content).toContain(
-      'description: "This describes the platform."',
-    );
+    // description is intentionally not derived; the agent supplies it later
+    expect(result.content).not.toContain("description:");
     expect(result.content).toContain("openwiki_generated: true");
     // the original body survives after the injected block
     expect(result.content).toContain("# Architecture Overview");
@@ -97,30 +96,14 @@ describe("deriveMinimalFrontmatter", () => {
     ).toBe("Credentials and updates");
   });
 
-  test("takes the description from prose directly under the heading (no blank line)", () => {
-    // The #386 shape: heading immediately followed by prose.
+  test("derives only type and title, never a description", () => {
+    // description is optional in OKF and left for the agent to write well.
     expect(
       deriveMinimalFrontmatter(
         "# Architecture Overview\nThis describes the platform.\n",
         PATH,
-      ).description,
-    ).toBe("This describes the platform.");
-  });
-
-  test("collapses a multi-line paragraph into one line", () => {
-    expect(
-      deriveMinimalFrontmatter(
-        "# Title\n\nLine one\nline two\n\nLater paragraph.\n",
-        PATH,
-      ).description,
-    ).toBe("Line one line two");
-  });
-
-  test("omits the description for a heading-only page", () => {
-    expect(deriveMinimalFrontmatter("# Only A Heading\n", PATH)).toEqual({
-      type: "Reference",
-      title: "Only A Heading",
-    });
+      ),
+    ).toEqual({ type: "Reference", title: "Architecture Overview" });
   });
 
   test("always uses type Reference", () => {
@@ -173,30 +156,30 @@ describe("parseFrontmatterFields", () => {
 });
 
 describe("renderFrontmatter", () => {
-  test("renders type, title, description, and the generated mark", () => {
+  test("renders type, title, and the generated mark", () => {
     expect(
       renderFrontmatter(
-        { type: "Reference", title: "Page", description: "A page." },
+        { type: "Reference", title: "Page" },
         { generated: true },
       ),
     ).toBe(
-      '---\ntype: "Reference"\ntitle: "Page"\ndescription: "A page."\nopenwiki_generated: true\n---\n\n',
+      '---\ntype: "Reference"\ntitle: "Page"\nopenwiki_generated: true\n---\n\n',
     );
   });
 
-  test("omits the description line when there is none", () => {
+  test("omits the generated mark when not generated", () => {
     const rendered = renderFrontmatter(
       { type: "Reference", title: "Page" },
       { generated: false },
     );
-    expect(rendered).not.toContain("description:");
     expect(rendered).not.toContain("openwiki_generated");
+    expect(rendered).not.toContain("description:");
   });
 
   test("quotes values so colons and special characters are safe", () => {
     expect(
       renderFrontmatter(
-        { type: "Reference", title: "A: colon", description: 'has "quotes"' },
+        { type: "Reference", title: "A: colon" },
         { generated: false },
       ),
     ).toContain('title: "A: colon"');
