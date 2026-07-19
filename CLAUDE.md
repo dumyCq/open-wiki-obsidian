@@ -19,3 +19,38 @@ This repository uses OpenWiki for recurring code documentation. Start with `open
 The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
 
 <!-- OPENWIKI:END -->
+
+## Obsidian engine mode — live two-way test
+
+This fork adds a third run mode, `openwiki obsidian`, whose wiki lives in an Obsidian vault
+(`OPENWIKI_OBSIDIAN_VAULT` in `~/.openwiki/.env`; falls back to `~/.openwiki/vault`).
+Design/spec: `docs/superpowers/specs/2026-07-18-obsidian-engine-design.md`.
+
+To verify the two-way contract against a real vault, drive the "human" side with
+[`obsidian-cli`](https://github.com/Yakitrak/obsidian-cli) (`brew install yakitrak/yakitrak/obsidian-cli`):
+
+```bash
+# One-time setup: register the vault in the Obsidian app (vault switcher →
+# "Open folder as vault"; registration is app-owned and cannot be done from the CLI), then:
+obsidian-cli set-default <vault-name>
+
+# 1. Simulate human edits (append to an agent page + a frontmatter-less note with wikilinks):
+obsidian-cli create quickstart --append --content "TEST MARKER: keep this line [[reading-list]]"
+obsidian-cli create reading-list --content "Things to read. Related: [[quickstart]]."
+
+# 2. Run the engine:
+pnpm dev obsidian --update --print
+```
+
+Expected invariants after the update (all four must hold):
+
+1. **No reverts** — the appended marker is still in `quickstart.md`.
+2. **Human notes untouched** — `reading-list.md` keeps its `[[wikilinks]]` and gets NO OKF
+   frontmatter added (agents only add `type` frontmatter when substantially rewriting a page).
+3. **Manifest consumed** — `.last-update.json` `vaultFileHashes` now covers the edited/new
+   files even when the agent writes nothing (otherwise the same edits are re-reported forever).
+4. **Index tolerance** — `index.md` regenerates listing the frontmatter-less note by basename
+   (index sync must never crash on human notes).
+
+Credential-free variant: `.superpowers/live-test/live-e2e.sh` (local git-ignored harness) runs
+the same contract as 26 assertions against a scripted OpenAI-compatible stub — no API key needed.
