@@ -22,3 +22,6 @@ large_tool_results/
 
 # Playwright MCP artifacts (screenshots, snapshots, console logs) — see CLAUDE.md
 .playwright-mcp/
+
+# Local agent session scratch (SDD ledger, review packages, live-test harness)
+.superpowers/
