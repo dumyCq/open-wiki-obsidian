@@ -11,6 +11,9 @@ export default tseslint.config(
       "node_modules/**",
       "*.tgz",
       "pnpm-lock.yaml",
+      // Local git-ignored scratch dirs (session artifacts, live-test harness).
+      ".superpowers/**",
+      ".playwright-mcp/**",
     ],
   },
   js.configs.recommended,
