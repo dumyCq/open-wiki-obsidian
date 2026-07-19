@@ -19,3 +19,6 @@ token.json
 *.jks
 
 large_tool_results/
+
+# Playwright MCP artifacts (screenshots, snapshots, console logs) — see CLAUDE.md
+.playwright-mcp/
